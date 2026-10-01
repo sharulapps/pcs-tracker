@@ -1085,6 +1085,34 @@ function setMonth(ym, date) {
   store(SETTINGS_KEY + '.month', ym);
 }
 /**
+ * How well a model name on a PCS form matches a model name in the plan.
+ * 3 = same, 2 = one contains the other ("104D SILENCER FR PANEL" / "… (2 CAV)"),
+ * 1 = every word of one name is in the other, as the word or its start ("VX11 W/ARCH" / "VX11 WHEEL ARCH",
+ *     "J72A INS BONNET" / "J72A/J72K INS BONNET", HIGH = HI, LOW = LO); the first word (model code) must be equal.
+ * 0 = different. Hi/Lo, C/P vs M/P, RH vs LH stay different because every word must be found.
+ */
+const SYN = { HIGH: 'HI', LOW: 'LO', LEFT: 'LH', RIGHT: 'RH' };
+const modelWords = s => String(s ?? '').toUpperCase().split(/[^A-Z0-9]+/).filter(Boolean).map(w => SYN[w] || w).filter(w => !/^\d*CAV$/.test(w));
+function modelMatch(a, b) {
+  const ka = key(a), kb = key(b);
+  if (!ka || !kb) return 0;
+  if (ka === kb) return 3;
+  if (ka.includes(kb) || kb.includes(ka)) return 2;
+  const wa = modelWords(a), wb = modelWords(b);
+  if (!wa.length || !wb.length || wa[0] !== wb[0]) return 0;
+  const inside = (xs, ys) => xs.every(x => ys.some(y => y === x || (x.length < y.length && y.startsWith(x))));
+  return inside(wa, wb) || inside(wb, wa) ? 1 : 0;
+}
+/** Best plan entry for a model among candidates; null when nothing matches or two match equally well. */
+function bestPlanMatch(model, cands) {
+  const scored = cands.map(p => ({ p, s: modelMatch(model, p.model), d: Math.abs(key(p.model).length - key(model).length) })).filter(x => x.s > 0)
+    .sort((a, b) => b.s - a.s || a.d - b.d);
+  if (!scored.length) return null;
+  if (scored[1] && scored[1].s === scored[0].s && scored[1].d === scored[0].d) return null; // ambiguous: leave it to a person
+  return scored[0].p;
+}
+
+/**
  * Link PCS records to plan entries when the names differ slightly. A PCS saved before the plan existed keeps the
  * model as written on the form (e.g. "104D SILENCER FR PANEL"), while a later plan revision may say
  * "104D SILENCER FR PANEL (2 CAV)". Same date, shift and machine plus a model that contains the other counts as the
@@ -1098,12 +1126,8 @@ function reconcile(plans, recs) {
   let linked = 0;
   recs.forEach(r => {
     if (ids.has(r.id)) return;
-    const km = key(r.model);
-    const cands = (groups.get([r.date, r.shift, key(r.machine)].join('|')) || []).filter(p => !used.has(p.id))
-      .filter(p => { const kp = key(p.model); return km && (kp === km || kp.includes(km) || km.includes(kp)); })
-      .sort((a, b) => Math.abs(key(a.model).length - km.length) - Math.abs(key(b.model).length - km.length));
-    if (!cands.length) return;
-    const p = cands[0];
+    const p = bestPlanMatch(r.model, (groups.get([r.date, r.shift, key(r.machine)].join('|')) || []).filter(x => !used.has(x.id)));
+    if (!p) return;
     r._id = r._id || r.id; r.formModel = r.model; r.model = p.model; r.id = p.id; r.planQty = r.planQty || p.qty;
     used.add(p.id); linked++;
   });
@@ -1688,6 +1712,25 @@ $('#tblPlanMeta').addEventListener('click', async e => {
 });
 
 /* ---------------- Records ---------------- */
+/** Dropdown to link a PCS to a plan run of the same date by hand, when the names are too different to match. */
+function linkControl(rec) {
+  const plant = rec.plant || S.plant;
+  const opts = S.plans.filter(p => p.date === rec.date && (p.plant || S.plant) === plant)
+    .sort((a, b) => a.machine.localeCompare(b.machine, 'en', { numeric: true }) || a.shift.localeCompare(b.shift) || a.model.localeCompare(b.model));
+  if (!opts.length) return '<div class="muted" style="margin-top:8px;font-size:12px">No plan runs on this date to link to.</div>';
+  const linked = S.plans.some(p => p.id === rec.id);
+  return `<div class="file-row" style="margin-top:10px"><span class="muted" style="font-size:12px">${linked ? 'Counted against plan' : 'Not linked to a plan'} · link to:</span>
+    <select class="link-plan" aria-label="Plan run">${linked ? '' : '<option value="">Choose the plan run…</option>'}${opts.map(p => `<option value="${esc(p.id)}" ${p.id === rec.id ? 'selected' : ''}>${esc(p.machine)} · ${esc(p.model)} · ${p.shift === 'Night' ? 'N' : 'D'} · ${fmt(p.qty)} pcs</option>`).join('')}</select>
+    <button class="btn small" data-act="link">Save link</button></div>`;
+}
+async function linkRecord(rec, planId) {
+  const p = S.plans.find(x => x.id === planId); if (!p || p.id === rec.id) return;
+  const machine = S.plant === 'all' ? String(p.machine).replace(/^[^·]+·\s*/, '') : p.machine; // drop the "M2 · " view prefix
+  const copy = { ...rec, plant: rec.plant || S.plant, machine, model: p.model, shift: p.shift, planQty: p.qty };
+  ['id', '_id', 'formModel', 'totalActual', 'totalReject'].forEach(k => delete copy[k]);
+  await Store().add(copy);
+  await Store().remove(rec);
+}
 function renderRecords() {
   const rows = S.records.slice().sort((a, b) => b.date.localeCompare(a.date) || a.machine.localeCompare(b.machine, 'en', { numeric: true }) || a.shift.localeCompare(b.shift));
   const planById = new Map(S.plans.map(p => [p.id, p]));
@@ -1699,11 +1742,18 @@ function renderRecords() {
 $('#tblRecords').addEventListener('click', async ev => {
   const b = ev.target.closest('button'); if (!b) return;
   const tr = b.closest('tr'), id = tr.dataset.id, rec = S.records.find(r => r.id === id);
+  if (b.dataset.act === 'link') {
+    const sel = b.closest('td').querySelector('.link-plan'), target = S.records.find(r => r.id === b.closest('tr.detail').previousElementSibling.dataset.id);
+    if (!sel.value) { toast('Choose the plan run first.'); return; }
+    try { await linkRecord(target, sel.value); toast('Linked to plan'); await refresh(); } catch (e) { toast('Link failed: ' + e.message); }
+    return;
+  }
   if (b.dataset.act === 'view') {
     const next = tr.nextElementSibling;
     if (next && next.classList.contains('detail')) { next.remove(); return; }
     const d = document.createElement('tr'); d.className = 'detail';
     d.innerHTML = `<td colspan="9"><div class="table-wrap"><table><thead><tr><th>Hour</th><th class="r">Plan</th><th class="r">Actual</th><th class="r">Reject</th><th>Remarks</th></tr></thead><tbody>${rec.hourly.map(h => `<tr><td class="num">${esc(h.slot)}</td><td class="r num">${fmt(h.plan)}</td><td class="r num">${fmt(h.actual)}</td><td class="r num">${fmt(h.reject)}</td><td>${esc(h.remark)}</td></tr>`).join('')}</tbody></table></div>
+      ${can('scan') ? linkControl(rec) : ''}
       <div style="margin-top:8px;color:var(--ink-2);font-size:12px">Prepared by: ${esc(rec.operator || '—')} · Supervisor: ${esc(rec.supervisor || '—')} · OK ${fmt(rec.okQty)} · NG ${fmt(rec.ngQty)} · Rework ${fmt(rec.reworkQty)} · Downtime ${fmt(rec.downtimeMin)} min</div></td>`;
     tr.after(d);
   } else if (b.dataset.act === 'del') {
@@ -1753,9 +1803,7 @@ async function findPlan(date, shift, machine, model) {
   if (!date) return null;
   let pool = [];
   try { pool = await Store().listPlansFor($('#dPlant').value, date, date); } catch (e) { pool = []; }
-  const km = key(machine), kmo = key(model);
-  const same = pool.filter(p => p.shift === shift && key(p.machine) === km);
-  return same.find(p => key(p.model) === kmo) || same.find(p => kmo && (key(p.model).includes(kmo) || kmo.includes(key(p.model)))) || null;
+  return bestPlanMatch(model, pool.filter(p => p.shift === shift && key(p.machine) === key(machine)));
 }
 let draftPlan = null;
 async function updatePlanMatch(autofill) {
