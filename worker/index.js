@@ -162,9 +162,12 @@ export function sanitizeRecord(r) {
     supervisor: str(r.supervisor, 60),
     planQty: num(r.planQty),
     downtimeMin: num(r.downtimeMin),
+    okQty: num(r.okQty),
+    ngQty: num(r.ngQty),
+    reworkQty: num(r.reworkQty),
     hourly,
     totalActual: hourly.reduce((s, h) => s + h.actual, 0),
-    totalReject: hourly.reduce((s, h) => s + h.reject, 0),
+    totalReject: hourly.reduce((s, h) => s + h.reject, 0) || num(r.ngQty),
     source: r.source === 'scan' ? 'scan' : 'manual',
     createdAt: new Date().toISOString(),
   };
@@ -190,53 +193,165 @@ export function sanitizePlanEntry(e, month) {
 /* Gemini extraction                                                    */
 /* ------------------------------------------------------------------ */
 
+// Form FR-PROD-003 "DAILY PRODUCTION PERFORMANCE RECORD" (Menang Nusantara).
+// Gemini only transcribes what is written; normalizePcsForm() converts times and checks the numbers.
 const PCS_SCHEMA = {
   type: 'OBJECT',
   properties: {
-    date: { type: 'STRING', description: 'Production date as YYYY-MM-DD' },
-    shift: { type: 'STRING', enum: ['Day', 'Night'] },
-    shiftMark: { type: 'STRING', description: 'Shift exactly as written, e.g. "D", "N", "Day", "Night"' },
-    machine: { type: 'STRING', description: 'Machine name as written, e.g. "P11", "HP 2", "WJ1", "T13"' },
-    model: { type: 'STRING', description: 'Model / part as written, e.g. "SAGA MC3 HI", "D74A PDP Lo C/P"' },
-    operator: { type: 'STRING' },
+    docNo: { type: 'STRING', description: 'DOC NO box, e.g. "FR-PROD-003"' },
+    station: { type: 'STRING', description: 'Station line exactly as written, e.g. "P12 104D SILENCER FR PANEL"' },
+    machine: { type: 'STRING', description: 'Machine part of Station, e.g. "P12", "HP 2", "WJ1", "T13"' },
+    model: { type: 'STRING', description: 'Model part of Station, e.g. "104D SILENCER FR PANEL"' },
+    dateText: { type: 'STRING', description: 'Date exactly as written, e.g. "30.9.2026"' },
+    shift: { type: 'STRING', description: 'Shift as written, e.g. "NIGHT", "DAY", "N", "D"' },
     supervisor: { type: 'STRING' },
-    downtimeMin: { type: 'INTEGER', description: 'Total downtime minutes; 0 if not written' },
-    hourly: {
+    rows: {
       type: 'ARRAY',
+      description: 'One item per table row that has any number written in Plan or Actual, top to bottom. Skip empty rows.',
       items: {
         type: 'OBJECT',
         properties: {
-          slot: { type: 'STRING', description: 'Time slot as HH:MM-HH:MM (24h)' },
-          plan: { type: 'INTEGER' },
-          actual: { type: 'INTEGER' },
-          reject: { type: 'INTEGER' },
-          remark: { type: 'STRING' },
+          from: { type: 'STRING', description: 'Hour written top-left of the row, as written, e.g. "8", "12", "2.3"' },
+          to: { type: 'STRING', description: 'Hour written bottom-left of the row, e.g. "9", "1", "3"' },
+          plan: { type: 'INTEGER', description: 'Plan column, upper number (this hour). 0 if empty' },
+          planCum: { type: 'INTEGER', description: 'Plan column, lower number (cumulative). 0 if empty' },
+          actual: { type: 'INTEGER', description: 'Actual column, upper handwritten number (this hour). 0 if empty' },
+          actualCum: { type: 'INTEGER', description: 'Actual column, lower handwritten number (cumulative). 0 if empty' },
+          downtimeType: { type: 'STRING', description: 'Ticked or circled downtime box: MORNING, SS, MATERIAL, MACHINE, MAN or METHOD. Empty if none' },
+          downtimeNote: { type: 'STRING', description: 'Text written after TIME: for this row, e.g. "START-8:30". Empty if none' },
         },
-        required: ['slot', 'plan', 'actual'],
+        required: ['from', 'to', 'plan', 'planCum', 'actual', 'actualCum'],
       },
     },
-    confidence: { type: 'NUMBER', description: '0 to 1, overall confidence in the reading' },
-    warnings: { type: 'ARRAY', items: { type: 'STRING' }, description: 'Cells that were unclear, crossed out or corrected' },
+    ok: { type: 'INTEGER', description: 'OK quantity at the bottom right. 0 if empty' },
+    ng: { type: 'INTEGER', description: 'NG quantity. 0 if empty' },
+    rework: { type: 'INTEGER', description: 'REWORK quantity. 0 if empty' },
+    preparedBy: { type: 'STRING', description: 'Name under PREPARE BY if readable, else empty' },
+    checkedBy: { type: 'STRING' },
+    verifiedBy: { type: 'STRING' },
+    confidence: { type: 'NUMBER', description: '0 to 1, honest overall confidence in the reading' },
+    warnings: { type: 'ARRAY', items: { type: 'STRING' }, description: 'Cells that were unclear, crossed out or overwritten' },
   },
-  required: ['date', 'shift', 'machine', 'model', 'hourly', 'confidence', 'warnings'],
+  required: ['station', 'dateText', 'shift', 'rows', 'confidence', 'warnings'],
 };
 
-const PROMPT = `You are reading a photo of a factory Production Control Sheet (PCS).
-Extract the header fields and every hourly row of the production table.
-Shift is marked D (day shift) or N (night shift); return "Day" or "Night".
-Machines are names like P9, P10, P11, P12, T13, HP 2, WJ1, WJ2, HEAT ROLLER, VACUUM SUCTION, FOAMING, ASSEMBLY.
+const PROMPT = `You are reading a photo of a "DAILY PRODUCTION PERFORMANCE RECORD" form (doc FR-PROD-003, Menang Nusantara Sdn Bhd).
+Transcribe what is written. Do not calculate or correct anything.
 
-Rules:
-- Return numbers as integers. Do not invent values: use 0 for an empty cell.
-- Time slots in 24-hour "HH:MM-HH:MM" form, in the order they appear on the form.
-  Night shift slots after midnight stay as written (e.g. "01:00-02:00").
-- If the form has no plan column, use 0 for plan.
-- Dates on the form are usually DD/MM/YYYY (Malaysia). Output YYYY-MM-DD.
-- If a cell is crossed out and rewritten, use the final value and add a warning naming the row.
-- If the TOTAL row on the form does not match the sum of the hourly rows, add a warning.
-- Ignore the TOTAL row itself; only return per-hour rows in "hourly".
-- Remarks: short text as written (e.g. "Die change", "Material shortage").
-- confidence: your honest overall confidence 0..1.`;
+Header: Station (machine then model, e.g. "P12 104D SILENCER FR PANEL"), Date (D.M.YYYY), Supervisor, Shift (DAY or NIGHT).
+Machines are names like P9, P10, P11, P12, T13, HP 2, WJ1, WJ2, HEAT ROLLER, VACUUM SUCTION, FOAMING, ASSEMBLY, LAMINATION.
+
+Table, one row per hour:
+- First column: start hour at the top-left of the diagonal, end hour at the bottom-right ("8" / "9"). "2.3" means 2:30.
+- Plan column: printed or written upper number = plan this hour, lower number = cumulative plan.
+- Actual column: handwritten upper number = actual this hour, lower number = cumulative actual.
+- Ignore the Diff column.
+- Downtime details on the right: which box is ticked/circled and any text after "TIME:".
+Only return rows that have a number in Plan or Actual. Use 0 for an empty number.
+Bottom right: OK, NG, REWORK quantities. Bottom left: PREPARE BY / CHECK BY / VERIFY BY names if readable.
+If a number is overwritten or unclear, give your best reading and add a warning naming the row (e.g. "Row 2.3-3: actual could be 30 or 80").`;
+
+/** "8" → {h:8,m:0}; "2.3" / "2.30" / "2:30" → {h:2,m:30} */
+function parseClock(s) {
+  const m = String(s ?? '').trim().match(/^(\d{1,2})(?:[.:](\d{1,2}))?/);
+  if (!m) return null;
+  let min = m[2] ? Number(m[2]) : 0;
+  if (m[2] && m[2].length === 1) min *= 10; // "2.3" = 2:30
+  return { h: Number(m[1]) % 24, m: Math.min(59, min) };
+}
+const pad = n => String(n).padStart(2, '0');
+
+/**
+ * Convert the form's 12-hour labels to 24-hour times. Times only move forward from the
+ * shift start (Day 08:00, Night 20:00), so "12" on a night shift is 00:00 and "1" is 01:00.
+ */
+export function to24h(label, shiftStartHour, prevOffset = 0) {
+  const c = parseClock(label);
+  if (!c) return null;
+  const startMin = shiftStartHour * 60;
+  const cands = [c.h % 12, (c.h % 12) + 12].map(h => {
+    const mins = h * 60 + c.m;
+    return { mins, off: (mins - startMin + 1440) % 1440 };
+  }).sort((a, b) => a.off - b.off);
+  const pick = cands.find(x => x.off >= prevOffset) || cands[cands.length - 1];
+  return { text: `${pad(Math.floor(pick.mins / 60))}:${pad(pick.mins % 60)}`, off: pick.off };
+}
+
+/** Turn Gemini's transcription into the app's record draft, with cross-checks. */
+export function normalizePcsForm(raw, { dayStart = 8, nightStart = 20 } = {}) {
+  const warnings = (Array.isArray(raw?.warnings) ? raw.warnings : []).map(w => str(w, 300)).filter(Boolean);
+  const n = v => Math.max(0, Math.round(Number(v) || 0));
+
+  // Station -> machine + model
+  const station = str(raw?.station, 160);
+  let machine = str(raw?.machine, 60), model = str(raw?.model, 120);
+  const sm = station.match(/^\s*(P\s*\d+|T\s*\d+|HP\s*\d+|WJ\s*\d+|HEAT ROLLER|VACUUM SUCTION|FOAMING|ASSEMBLY|PRE LAMINATION|LAMINATION)\s+(.+)$/i);
+  if (sm) { machine = machine || sm[1].toUpperCase().replace(/^(P|T|WJ)\s+/, '$1'); model = model || sm[2].trim(); }
+  if (!machine && station) { const [first, ...rest] = station.split(/\s+/); machine = first; model = model || rest.join(' '); }
+
+  // Date "30.9.2026" (D.M.Y)
+  let date = '';
+  const dm = String(raw?.dateText || raw?.date || '').match(/(\d{1,4})[./-](\d{1,2})[./-](\d{2,4})/);
+  if (dm) {
+    let [d, mo, y] = dm[1].length === 4 ? [dm[3], dm[2], dm[1]] : [dm[1], dm[2], dm[3]];
+    if (String(y).length === 2) y = '20' + y;
+    date = `${y}-${pad(mo)}-${pad(d)}`;
+  }
+  if (!isDate(date)) { date = ''; warnings.push('Date could not be read. Please fill it in.'); }
+
+  const shift = /^\s*(n|night|malam)/i.test(String(raw?.shift || '')) ? 'Night' : 'Day';
+  const start = shift === 'Night' ? nightStart : dayStart;
+
+  const rows = (Array.isArray(raw?.rows) ? raw.rows : [])
+    .filter(r => n(r.plan) || n(r.planCum) || n(r.actual) || n(r.actualCum));
+  const hourly = [];
+  let prevOff = 0, prevPlanCum = 0, prevActCum = 0, cumOk = true;
+  rows.forEach(r => {
+    const a = to24h(r.from, start, prevOff);
+    const b = a ? to24h(r.to, start, a.off) : null;
+    if (a) prevOff = a.off;
+    const label = `${str(r.from, 6)}-${str(r.to, 6)}`;
+    const slot = a && b ? `${a.text}-${b.text}` : label;
+
+    let plan = n(r.plan);
+    const planCum = n(r.planCum);
+    if (planCum && planCum >= prevPlanCum && planCum - prevPlanCum !== plan) {
+      if (plan) warnings.push(`Row ${label}: plan ${plan} does not match cumulative ${planCum}; using ${planCum - prevPlanCum}.`);
+      plan = planCum - prevPlanCum;
+    }
+    if (planCum) prevPlanCum = planCum;
+
+    let actual = n(r.actual);
+    const actCum = n(r.actualCum);
+    if (actCum) {
+      if (actCum < prevActCum) { cumOk = false; warnings.push(`Row ${label}: cumulative actual ${actCum} is lower than the row before. Please check.`); }
+      else if (actCum - prevActCum !== actual) {
+        warnings.push(`Row ${label}: actual reads ${actual} but cumulative ${actCum} gives ${actCum - prevActCum}; using ${actCum - prevActCum}. Please confirm.`);
+        actual = actCum - prevActCum;
+      }
+      prevActCum = Math.max(prevActCum, actCum);
+    } else prevActCum += actual;
+
+    const remark = [str(r.downtimeType, 40), str(r.downtimeNote, 160)].filter(Boolean).join(': ');
+    hourly.push({ slot, plan, actual, reject: 0, remark });
+  });
+  if (!hourly.length) warnings.push('No hourly rows were read. Retake the photo with the whole table in frame.');
+
+  const sumActual = hourly.reduce((s, h) => s + h.actual, 0);
+  const ok = n(raw?.ok), ng = n(raw?.ng), rework = n(raw?.rework);
+  if (ok && ok !== sumActual) warnings.push(`OK total on the form is ${ok}, but the hourly actuals add up to ${sumActual}. Please confirm which is right.`);
+  if (cumOk && prevActCum && prevActCum !== sumActual) warnings.push(`Last cumulative actual is ${prevActCum}, but the hourly actuals add up to ${sumActual}.`);
+
+  return {
+    docNo: str(raw?.docNo, 40), station, machine, model, date, shift,
+    supervisor: str(raw?.supervisor, 60), operator: str(raw?.preparedBy, 120),
+    checkedBy: str(raw?.checkedBy, 60), verifiedBy: str(raw?.verifiedBy, 60),
+    okQty: ok, ngQty: ng, reworkQty: rework,
+    hourly,
+    confidence: Number.isFinite(Number(raw?.confidence)) ? Number(raw.confidence) : null,
+    warnings: [...new Set(warnings)],
+  };
+}
 
 async function extractPcs(env, body) {
   if (!env.GEMINI_API_KEY) throw httpError('GEMINI_API_KEY is not set on the Worker', 503);
@@ -258,11 +373,14 @@ async function extractPcs(env, body) {
   const out = await res.json().catch(() => ({}));
   if (!res.ok) throw httpError('Gemini error: ' + (out.error?.message || res.status), 502);
   const text = out.candidates?.[0]?.content?.parts?.map(p => p.text || '').join('') || '';
+  let raw;
   try {
-    return JSON.parse(text);
+    raw = JSON.parse(text);
   } catch {
     throw httpError('Gemini did not return readable data. Retake the photo with the whole form in frame.', 502);
   }
+  const hr = v => (Number.isInteger(Number(v)) && Number(v) >= 0 && Number(v) <= 23 ? Number(v) : undefined);
+  return normalizePcsForm(raw, { dayStart: hr(body.dayStart) ?? 8, nightStart: hr(body.nightStart) ?? 20 });
 }
 
 /* ------------------------------------------------------------------ */

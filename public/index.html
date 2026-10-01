@@ -460,9 +460,12 @@ code { font-family: var(--font-data); font-size: 12px; background: var(--surface
             <div class="field"><label for="dShift">Shift</label><select id="dShift"><option value="Day">Day (D)</option><option value="Night">Night (N)</option></select></div>
             <div class="field"><label for="dMachine">Machine</label><input type="text" id="dMachine" list="machineList"></div>
             <div class="field"><label for="dModel">Model</label><input type="text" id="dModel" list="modelList"></div>
-            <div class="field"><label for="dOperator">Operator</label><input type="text" id="dOperator"></div>
+            <div class="field"><label for="dOperator">Prepared by (operator)</label><input type="text" id="dOperator"></div>
             <div class="field"><label for="dSupervisor">Supervisor</label><input type="text" id="dSupervisor"></div>
             <div class="field"><label for="dDowntime">Downtime (min)</label><input type="number" id="dDowntime" min="0" inputmode="numeric"></div>
+            <div class="field"><label for="dOk">OK (pcs)</label><input type="number" id="dOk" min="0" inputmode="numeric"></div>
+            <div class="field"><label for="dNg">NG (pcs)</label><input type="number" id="dNg" min="0" inputmode="numeric"></div>
+            <div class="field"><label for="dRework">Rework (pcs)</label><input type="number" id="dRework" min="0" inputmode="numeric"></div>
           </div>
           <datalist id="machineList"></datalist>
           <datalist id="modelList"></datalist>
@@ -606,6 +609,9 @@ function normalizeRecord(r) {
     operator: String(r.operator ?? '').trim(),
     supervisor: String(r.supervisor ?? '').trim(),
     downtimeMin: Math.max(0, Number(r.downtimeMin) || 0),
+    okQty: Math.max(0, Number(r.okQty) || 0),
+    ngQty: Math.max(0, Number(r.ngQty) || 0),
+    reworkQty: Math.max(0, Number(r.reworkQty) || 0),
     planQty: Math.max(0, Number(r.planQty) || 0),
     hourly,
     source: r.source || 'manual',
@@ -613,7 +619,7 @@ function normalizeRecord(r) {
   };
   out.id = r.id || recId(out);
   out.totalActual = hourly.reduce((s, h) => s + h.actual, 0);
-  out.totalReject = hourly.reduce((s, h) => s + h.reject, 0);
+  out.totalReject = hourly.reduce((s, h) => s + h.reject, 0) || out.ngQty;
   return out;
 }
 function normalizePlan(e) {
@@ -659,53 +665,83 @@ function samplePlanEntry() {
     || D.plans.filter(p => p.date <= today()).pop();
   return pick || { date: today(), shift: 'Day', machine: 'P11', model: 'SAGA MC3 HI', ratePerHour: 22, qty: 240 };
 }
+/* Sample in the layout of form FR-PROD-003; the demo extraction returns what the Worker would after normalising it. */
 function sampleFormData() {
   const p = samplePlanEntry();
-  const actualF = [0.86, 1.0, 1.05, 0.95, 0.41, 1.0, 0.95, 1.05, 0.91, 1.0, 0.9, 1, 1, 1];
-  const hourly = hourlyPlan(p).map((h, i) => ({
-    slot: slotLabel(h.hour), plan: 0, actual: Math.round(h.plan * actualF[i]), reject: i % 3 === 1 ? 1 : 0,
-    remark: i === 4 ? 'Mold change 35 min' : '',
-  }));
+  const f = [0.86, 1.0, 1.05, 0.95, 0.41, 1.0, 0.95, 1.05, 0.91, 1.0, 0.9, 1, 1, 1];
+  let pc = 0, ac = 0;
+  const rows = hourlyPlan(p).map((h, i) => {
+    const actual = Math.round(h.plan * f[i]);
+    pc += h.plan; ac += actual;
+    return { hour: h.hour, plan: h.plan, planCum: pc, actual, actualCum: ac,
+      downtimeType: i === 4 ? 'MACHINE' : i === 0 ? 'SS' : '', downtimeNote: i === 4 ? 'Mold change 35 min' : i === 0 ? 'START-8:10' : '' };
+  });
+  const fix = Math.min(4, rows.length - 1);
   return {
-    date: p.date, shift: p.shift, machine: p.machine, model: p.model, operator: 'Ziarul', supervisor: 'Azman',
-    downtimeMin: 35, hourly, confidence: 0.92,
-    warnings: [`Row ${hourly[Math.min(4, hourly.length - 1)].slot}: actual is written over a correction. Please confirm.`],
+    docNo: 'FR-PROD-003', station: `${p.machine} ${p.model}`, date: p.date, shift: p.shift, machine: p.machine, model: p.model,
+    operator: 'Ziarul', supervisor: 'Azman', okQty: ac, ngQty: 3, reworkQty: 0, downtimeMin: 35, rows,
+    hourly: rows.map(r => ({ slot: slotLabel(r.hour), plan: r.plan, actual: r.actual, reject: 0, remark: [r.downtimeType, r.downtimeNote].filter(Boolean).join(': ') })),
+    confidence: 0.91,
+    warnings: [`Row ${rows[fix].hour % 12 || 12}-${(rows[fix].hour + 1) % 12 || 12}: actual is overwritten; cumulative ${rows[fix].actualCum} gives ${rows[fix].actual}. Please confirm.`],
   };
 }
 async function drawSampleForm() {
   try { await document.fonts.load('26px Caveat'); } catch (e) { /* fallback font */ }
   const d = sampleFormData();
-  const rh = 54, top = 330, n = d.hourly.length;
-  const W = 900, H = top + (n + 2) * rh + 140, c = document.createElement('canvas');
+  const n = Math.max(d.rows.length + 2, 12), rh = 62, top = 300;
+  const W = 960, H = top + n * rh + 190, c = document.createElement('canvas');
   c.width = W; c.height = H;
   const g = c.getContext('2d');
+  const ink = '#1b1f24', pen = '#1d3f9a';
   g.fillStyle = '#fbfaf6'; g.fillRect(0, 0, W, H);
-  g.fillStyle = '#1b1f24'; g.strokeStyle = '#1b1f24';
-  g.font = '600 26px "IBM Plex Sans", Arial'; g.fillText('PRODUCTION CONTROL SHEET (PCS)', 50, 70);
-  g.font = '14px "IBM Plex Mono", monospace'; g.fillText('M1 · Form PCS-01', 700, 70);
-  g.lineWidth = 2; g.strokeRect(40, 40, W - 80, H - 80);
-  const hand = (t, x, y, size = 30) => { g.save(); g.fillStyle = '#1d3f9a'; g.font = `600 ${size}px Caveat, "Comic Sans MS", cursive`; g.fillText(t, x, y); g.restore(); };
-  const label = (t, x, y) => { g.font = '600 15px "IBM Plex Sans", Arial'; g.fillStyle = '#1b1f24'; g.fillText(t, x, y); };
-  const fields = [['Date', d.date.split('-').reverse().join('/'), 60, 130], ['Shift', d.shift === 'Night' ? 'N' : 'D', 470, 130], ['Machine', d.machine, 60, 180], ['Model', d.model, 470, 180], ['Operator', d.operator, 60, 230], ['Downtime', d.downtimeMin + ' min', 470, 230], ['Supervisor', d.supervisor, 60, 280]];
-  fields.forEach(([k, v, x, y]) => { label(k + ':', x, y); g.lineWidth = 1; g.beginPath(); g.moveTo(x + 100, y + 6); g.lineTo(x + 380, y + 6); g.stroke(); hand(v, x + 110, y, v.length > 14 ? 24 : 30); });
-  const cols = [60, 260, 400, 530, 840];
-  g.lineWidth = 1.5;
-  for (let i = 0; i <= n + 2; i++) { g.beginPath(); g.moveTo(cols[0], top + i * rh); g.lineTo(cols[4], top + i * rh); g.stroke(); }
-  cols.forEach(x => { g.beginPath(); g.moveTo(x, top); g.lineTo(x, top + (n + 2) * rh); g.stroke(); });
-  ['Time', 'Actual', 'Reject', 'Remarks'].forEach((h, i) => label(h, cols[i] + 12, top + 34));
-  d.hourly.forEach((h, i) => {
-    const y = top + (i + 1) * rh + 36;
-    g.font = '15px "IBM Plex Mono", monospace'; g.fillStyle = '#1b1f24'; g.fillText(h.slot, cols[0] + 12, y);
-    if (i === 4) { hand(String(h.actual + 10), cols[1] + 30, y, 30); g.strokeStyle = '#1d3f9a'; g.beginPath(); g.moveTo(cols[1] + 24, y - 10); g.lineTo(cols[1] + 64, y - 14); g.stroke(); g.strokeStyle = '#1b1f24'; hand(String(h.actual), cols[1] + 72, y - 6, 28); }
-    else hand(String(h.actual), cols[1] + 30, y, 30);
-    hand(String(h.reject), cols[2] + 30, y, 30);
-    if (h.remark) hand(h.remark, cols[3] + 10, y, 24);
-  });
-  const ty = top + (n + 1) * rh + 36;
-  label('TOTAL', cols[0] + 12, ty);
-  hand(String(d.hourly.reduce((s, h) => s + h.actual, 0)), cols[1] + 24, ty, 30);
-  hand(String(d.hourly.reduce((s, h) => s + h.reject, 0)), cols[2] + 30, ty, 30);
-  label('Checked by:', 60, H - 70); hand('Azman', 170, H - 68);
+  g.strokeStyle = ink; g.fillStyle = ink;
+  const line = (x1, y1, x2, y2, w = 1.4) => { g.lineWidth = w; g.beginPath(); g.moveTo(x1, y1); g.lineTo(x2, y2); g.stroke(); };
+  const txt = (t, x, y, size = 14, weight = 600, align = 'left') => { g.font = `${weight} ${size}px Arial, sans-serif`; g.textAlign = align; g.fillStyle = ink; g.fillText(t, x, y); g.textAlign = 'left'; };
+  const hand = (t, x, y, size = 30, align = 'left') => { g.save(); g.fillStyle = pen; g.textAlign = align; g.font = `600 ${size}px Caveat, "Comic Sans MS", cursive`; g.fillText(t, x, y); g.restore(); };
+  // Title block
+  g.lineWidth = 2; g.strokeRect(60, 40, 840, 70); line(560, 40, 560, 110, 2); line(700, 40, 700, 110, 2); line(60, 75, 900, 75, 2);
+  txt('MENANG NUSANTARA SDN BHD', 80, 66, 20, 700); txt('DAILY PRODUCTION PERFORMANCE RECORD', 80, 100, 15, 700);
+  txt('DOC NO', 572, 64, 13); txt('DOC REV NO', 572, 99, 13); txt('FR-PROD-003', 800, 64, 14, 700, 'center'); txt('0', 800, 99, 14, 700, 'center');
+  // Header fields
+  txt('Station  :', 60, 160, 15, 500); hand(d.station, 150, 160, d.station.length > 22 ? 24 : 28); line(148, 166, 520, 166, 1);
+  txt('Date       :', 60, 200, 15, 500); hand(d.date.split('-').reverse().map(Number).join('.'), 150, 200, 28); line(148, 206, 380, 206, 1);
+  txt('Supervisor :', 560, 160, 15, 500); hand(d.supervisor, 670, 160, 28); line(668, 166, 900, 166, 1);
+  txt('Shift        :', 560, 200, 15, 500); hand(d.shift.toUpperCase(), 670, 200, 28); line(668, 206, 900, 206, 1);
+  // Table
+  const X = [40, 150, 250, 350, 440, 920];
+  g.lineWidth = 1.6; g.strokeRect(X[0], top - 30, X[5] - X[0], n * rh + 30);
+  X.slice(1, 5).forEach(x => line(x, top - 30, x, top + n * rh));
+  line(X[0], top, X[4], top);
+  txt('0', 95, top - 9, 13, 600, 'center'); txt('Plan', 200, top - 9, 13, 600, 'center'); txt('Actual', 300, top - 9, 13, 600, 'center'); txt('Diff', 395, top - 9, 13, 600, 'center');
+  txt('DOWNTIME DETAILS', 680, top - 9, 13, 600, 'center');
+  const boxes = ['MATERIAL', 'MACHINE', 'MAN', 'METHOD'];
+  for (let i = 0; i < n; i++) {
+    const y = top + i * rh, r = d.rows[i];
+    line(X[0], y + rh, X[5], y + rh);
+    line(X[0], y, X[1], y + rh, 1); line(X[3], y, X[4], y + rh, 1); // diagonals
+    const h0 = r ? r.hour : (d.rows.length ? d.rows[d.rows.length - 1].hour + 1 + (i - d.rows.length) : 8 + i);
+    txt(String(h0 % 12 || 12), X[0] + 6, y + 18, 13); txt(String((h0 + 1) % 12 || 12), X[1] - 8, y + rh - 8, 13, 600, 'right');
+    // downtime row: boxes + TIME
+    line(X[4], y + rh / 2, X[5], y + rh / 2, 1);
+    boxes.forEach((bx, k) => { const bxX = X[4] + 10 + k * 118; g.lineWidth = 1; g.strokeRect(bxX, y + 6, 108, 20); txt(bx, bxX + 54, y + 21, 11, 500, 'center'); });
+    txt('TIME:', X[4] + 8, y + rh - 10, 12, 500);
+    if (!r) continue;
+    txt(String(r.plan), X[1] + 14, y + 26, 14, 500); txt(String(r.planCum), X[2] - 8, y + rh - 8, 14, 500, 'right');
+    if (d.warnings.length && i === Math.min(4, d.rows.length - 1)) {
+      hand(String(r.actual + 20), X[2] + 12, y + 30, 30); g.strokeStyle = pen; line(X[2] + 8, y + 22, X[2] + 50, y + 16, 2); g.strokeStyle = ink; hand(String(r.actual), X[2] + 52, y + 30, 26);
+    } else hand(String(r.actual), X[2] + 12, y + 30, 30);
+    hand(String(r.actualCum), X[3] - 8, y + rh - 6, 30, 'right');
+    if (r.downtimeType) { const k = boxes.indexOf(r.downtimeType); if (k >= 0) { g.strokeStyle = pen; g.lineWidth = 2; g.beginPath(); g.ellipse(X[4] + 64 + k * 118, y + 16, 58, 14, 0, 0, Math.PI * 2); g.stroke(); g.strokeStyle = ink; } }
+    if (r.downtimeNote) hand(r.downtimeNote, X[4] + 60, y + rh - 8, 24);
+  }
+  // Footer
+  const fy = top + n * rh + 40;
+  g.lineWidth = 1.6; g.strokeRect(40, fy, 420, 80); line(180, fy, 180, fy + 80); line(320, fy, 320, fy + 80); line(40, fy + 28, 460, fy + 28);
+  txt('PREPARE BY', 110, fy + 20, 12, 600, 'center'); txt('CHECK BY', 250, fy + 20, 12, 600, 'center'); txt('VERIFY BY', 390, fy + 20, 12, 600, 'center');
+  hand(d.operator, 60, fy + 66, 28); hand(d.supervisor, 200, fy + 66, 28);
+  txt('OK:', 500, fy + 20, 15, 600); hand(`${d.okQty} pcs`, 545, fy + 22, 30); line(540, fy + 26, 720, fy + 26, 1);
+  txt('NG:', 500, fy + 50, 15, 600); hand(String(d.ngQty), 545, fy + 52, 30); line(540, fy + 56, 720, fy + 56, 1);
+  txt('REWORK:', 500, fy + 80, 15, 600); line(580, fy + 86, 720, fy + 86, 1);
   return c.toDataURL('image/jpeg', 0.9);
 }
 
@@ -764,7 +800,7 @@ const LiveStore = {
   async remove(id) { await api('/api/records/' + encodeURIComponent(id), { method: 'DELETE' }); },
   async extract(imageDataUrl) {
     const [, mime, b64] = imageDataUrl.match(/^data:([^;]+);base64,(.*)$/) || [];
-    return (await api('/api/extract', { method: 'POST', body: JSON.stringify({ mimeType: mime, imageBase64: b64 }) })).data;
+    return (await api('/api/extract', { method: 'POST', body: JSON.stringify({ mimeType: mime, imageBase64: b64, dayStart: Settings.dayStart, nightStart: Settings.nightStart }) })).data;
   },
 };
 
@@ -1092,13 +1128,15 @@ function renderHourly() {
   const slots = new Map(); // key shift|hour
   shifts.forEach(s => { for (let i = 0; i < 12; i++) { const h = (shiftStart(s) + i) % 24; slots.set(s + '|' + h, { shift: s, hour: h, slot: slotLabel(h), plan: 0, actual: 0, reject: 0, remarks: [] }); } });
   const slotFor = (s, h) => { const k = s + '|' + h; if (!slots.has(k)) slots.set(k, { shift: s, hour: h, slot: slotLabel(h), plan: 0, actual: 0, reject: 0, remarks: [] }); return slots.get(k); };
+  // The PCS form's own hourly plan (breaks, half hours) wins; otherwise lay out the monthly plan by output/hour.
+  const formPlanIds = new Set(recs.filter(r => r.hourly.some(h => h.plan > 0)).map(r => r.id));
   const plannedIds = new Set();
-  plans.forEach(p => { plannedIds.add(p.id); hourlyPlan(p).forEach(h => (slotFor(p.shift, h.hour).plan += h.plan)); });
+  plans.forEach(p => { if (formPlanIds.has(p.id)) return; plannedIds.add(p.id); hourlyPlan(p).forEach(h => (slotFor(p.shift, h.hour).plan += h.plan)); });
   recs.forEach(r => r.hourly.forEach(h => {
     const hr = slotHour(h.slot); if (hr === null) return;
     const x = slotFor(r.shift, hr);
     x.actual += h.actual; x.reject += h.reject;
-    if (!plannedIds.has(r.id)) x.plan += h.plan; // unplanned run: use the PCS form's own plan
+    if (!plannedIds.has(r.id)) x.plan += h.plan; // plan as written on the PCS form
     if (h.remark) x.remarks.push((recs.length > 1 ? `${r.machine} ${r.model}: ` : '') + h.remark);
   }));
   const order = s => shifts.indexOf(s.shift) * 100 + ((s.hour - shiftStart(s.shift) + 24) % 24);
@@ -1238,7 +1276,7 @@ $('#tblRecords').addEventListener('click', async ev => {
     if (next && next.classList.contains('detail')) { next.remove(); return; }
     const d = document.createElement('tr'); d.className = 'detail';
     d.innerHTML = `<td colspan="9"><div class="table-wrap"><table><thead><tr><th>Hour</th><th class="r">Plan</th><th class="r">Actual</th><th class="r">Reject</th><th>Remarks</th></tr></thead><tbody>${rec.hourly.map(h => `<tr><td class="num">${esc(h.slot)}</td><td class="r num">${fmt(h.plan)}</td><td class="r num">${fmt(h.actual)}</td><td class="r num">${fmt(h.reject)}</td><td>${esc(h.remark)}</td></tr>`).join('')}</tbody></table></div>
-      <div style="margin-top:8px;color:var(--ink-2);font-size:12px">Operator: ${esc(rec.operator || '—')} · Supervisor: ${esc(rec.supervisor || '—')} · Downtime ${fmt(rec.downtimeMin)} min</div></td>`;
+      <div style="margin-top:8px;color:var(--ink-2);font-size:12px">Prepared by: ${esc(rec.operator || '—')} · Supervisor: ${esc(rec.supervisor || '—')} · OK ${fmt(rec.okQty)} · NG ${fmt(rec.ngQty)} · Rework ${fmt(rec.reworkQty)} · Downtime ${fmt(rec.downtimeMin)} min</div></td>`;
     tr.after(d);
   } else if (b.dataset.act === 'del') {
     if (!b.dataset.armed) { b.dataset.armed = '1'; b.textContent = 'Confirm delete'; setTimeout(() => { if (b.isConnected) { delete b.dataset.armed; b.textContent = 'Delete'; } }, 3000); return; }
@@ -1327,7 +1365,8 @@ function fillDraft(d) {
   $('#dShift').value = d.shift === 'Night' ? 'Night' : 'Day';
   $('#dMachine').value = d.machine || ''; $('#dModel').value = d.model || '';
   $('#dOperator').value = d.operator || ''; $('#dSupervisor').value = d.supervisor || ''; $('#dDowntime').value = d.downtimeMin || 0;
-  $('#confLabel').textContent = typeof d.confidence === 'number' ? `Gemini confidence ${(d.confidence * 100).toFixed(0)}%` : '';
+  $('#dOk').value = d.okQty || ''; $('#dNg').value = d.ngQty || ''; $('#dRework').value = d.reworkQty || '';
+  $('#confLabel').textContent = [d.docNo, typeof d.confidence === 'number' ? `Gemini confidence ${(d.confidence * 100).toFixed(0)}%` : ''].filter(Boolean).join(' · ');
   const w = (d.warnings || []).filter(Boolean);
   $('#reviewNotices').innerHTML = w.length ? `<div class="notice warn"><span>▲</span><div><b>Check these before saving</b><ul>${w.map(x => `<li>${esc(x)}</li>`).join('')}</ul></div></div>` : '';
   const start = shiftStart($('#dShift').value);
@@ -1379,6 +1418,7 @@ $('#btnSave').addEventListener('click', async () => {
     date: $('#dDate').value, shift: $('#dShift').value, machine: draftPlan ? draftPlan.machine : $('#dMachine').value.trim(),
     model: draftPlan ? draftPlan.model : $('#dModel').value.trim(), operator: $('#dOperator').value, supervisor: $('#dSupervisor').value,
     downtimeMin: +$('#dDowntime').value || 0, planQty: draftPlan ? draftPlan.qty : 0, hourly, source: S.scan.image ? 'scan' : 'manual',
+    okQty: +$('#dOk').value || 0, ngQty: +$('#dNg').value || 0, reworkQty: +$('#dRework').value || 0,
   };
   const btn = $('#btnSave'); btn.disabled = true;
   try {

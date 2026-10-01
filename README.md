@@ -24,7 +24,23 @@ The hourly plan is the OUTPUT / HOURS rate laid out from the shift start (Day 08
 
 Note: the TOTAL column in the Excel uses `=SUM()`, which skips cells written as `D-xxx / N-xxx` (they are text). The app counts them, so its totals are higher than the Excel TOTAL for those rows.
 
-Dashboard (pick a **month** and a **date**):
+## PCS form (FR-PROD-003)
+
+The supervisor photographs the *DAILY PRODUCTION PERFORMANCE RECORD* at the end of each shift.
+
+- Header: **Station** = machine + model (e.g. `P12 104D SILENCER FR PANEL`), **Date** `D.M.YYYY`, **Shift** DAY/NIGHT, Supervisor.
+- Each table row: start/end hour in 12-hour labels (`8`/`9`, `12`/`1`, `2.3` = 2:30), Plan (this hour / cumulative), Actual (this hour / cumulative), downtime box + `TIME:` note.
+- Footer: OK, NG, REWORK, Prepare / Check / Verify by.
+
+Gemini only transcribes the form. The Worker (`normalizePcsForm`) then:
+- converts hour labels to 24-hour times along the shift (night: `8`→20:00, `12`→00:00, `2.3`→02:30),
+- checks each hourly figure against the cumulative column and uses the cumulative difference when they disagree, with a warning,
+- warns when OK on the form differs from the hourly actuals,
+- splits Station into machine and model so the record matches the monthly plan.
+
+The hourly plan written on the form (with breaks and half hours) is used for the hourly chart; the monthly plan's output/hour is the fallback when a run has no PCS yet.
+
+
 - **Daily output**: plan vs actual for the chosen date, and how many planned runs have a PCS scanned
 - **Month to date**: everything accumulates from the 1st of the month up to the chosen date — plan to date, actual to date, achievement, balance to the month plan (with pcs/day needed over the remaining planned days), days on target, missing PCS, reject rate
 - **Monthly output chart**: accumulated plan vs actual from the 1st

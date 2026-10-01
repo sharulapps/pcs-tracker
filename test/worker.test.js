@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { generateKeyPairSync } from 'node:crypto';
-import worker, { toFs, fromFs, sanitizeRecord, sanitizePlanEntry } from '../worker/index.js';
+import worker, { toFs, fromFs, sanitizeRecord, sanitizePlanEntry, normalizePcsForm, to24h } from '../worker/index.js';
 
 const { privateKey } = generateKeyPairSync('rsa', { modulusLength: 2048 });
 const pem = privateKey.export({ type: 'pkcs8', format: 'pem' }).replace(/\n/g, '\\n');
@@ -21,7 +21,8 @@ globalThis.fetch = async (url, init = {}) => {
   if (url.includes('generativelanguage')) {
     const body = JSON.parse(init.body);
     assert.equal(body.contents[0].parts[1].inline_data.data, 'AAAA');
-    return reply({ candidates: [{ content: { parts: [{ text: '{"date":"2026-09-30","shift":"Day","machine":"P11","model":"SAGA MC3 HI","hourly":[{"slot":"08:00-09:00","plan":22,"actual":20}],"confidence":0.9,"warnings":[]}' }] } }] });
+    const form = { station: 'P11 SAGA MC3 HI', dateText: '30.9.2026', shift: 'DAY', rows: [{ from: '8', to: '9', plan: 22, planCum: 22, actual: 20, actualCum: 20 }], confidence: 0.9, warnings: [] };
+    return reply({ candidates: [{ content: { parts: [{ text: JSON.stringify(form) }] } }] });
   }
   const base = 'https://firestore.googleapis.com/v1/projects/demo-proj/databases/(default)/documents';
   assert.equal(init.headers.Authorization, 'Bearer tok');
@@ -113,4 +114,47 @@ test('health check names missing Firebase secrets', async () => {
   const h = await (await worker.fetch(new Request('https://x.test/api/health?check=1'), { GEMINI_API_KEY: 'k' })).json();
   assert.equal(h.firestore, false);
   assert.match(h.check.googleAuth, /Missing on the Worker: FIREBASE_PROJECT_ID, FIREBASE_CLIENT_EMAIL, FIREBASE_PRIVATE_KEY/);
+});
+
+// Transcription of the real FR-PROD-003 photo (P12, 30.9.2026, NIGHT), including the unclear "80" in row 2.3-3.
+const FORM_P12 = {
+  docNo: 'FR-PROD-003', station: 'P12 104D SILENCER FR PANEL', dateText: '30.9.2026', shift: 'NIGHT', supervisor: '',
+  rows: [
+    { from: '8', to: '9', plan: 30, planCum: 30, actual: 30, actualCum: 30, downtimeType: 'SS', downtimeNote: 'START-8:30' },
+    { from: '9', to: '10', plan: 60, planCum: 90, actual: 60, actualCum: 90 },
+    { from: '10', to: '11', plan: 60, planCum: 150, actual: 60, actualCum: 150 },
+    { from: '11', to: '12', plan: 60, planCum: 210, actual: 60, actualCum: 210 },
+    { from: '12', to: '1', plan: 60, planCum: 270, actual: 60, actualCum: 270 },
+    { from: '2.3', to: '3', plan: 30, planCum: 300, actual: 80, actualCum: 300 },
+    { from: '3', to: '4', plan: 60, planCum: 360, actual: 60, actualCum: 360 },
+    { from: '4', to: '5', plan: 60, planCum: 420, actual: 60, actualCum: 420 },
+    { from: '5', to: '6', plan: 60, planCum: 480, actual: 60, actualCum: 480 },
+    { from: '6', to: '7', plan: 60, planCum: 540, actual: 60, actualCum: 540 },
+    { from: '7', to: '8', plan: 60, planCum: 600, actual: 60, actualCum: 600, downtimeNote: 'STOP-8:00' },
+    { from: '8', to: '9', plan: 0, planCum: 0, actual: 0, actualCum: 0 },
+  ],
+  ok: 660, ng: 0, rework: 0, preparedBy: 'Vaurz', confidence: 0.86, warnings: [],
+};
+
+test('to24h follows the shift clock', () => {
+  assert.equal(to24h('8', 20).text, '20:00');
+  assert.equal(to24h('12', 20, to24h('11', 20).off).text, '00:00');
+  assert.equal(to24h('2.3', 20, to24h('12', 20, 240).off).text, '02:30');
+  assert.equal(to24h('1', 8, to24h('12', 8).off).text, '13:00');
+  assert.equal(to24h('8', 8).text, '08:00');
+});
+
+test('normalizePcsForm reads the real P12 night form', () => {
+  const d = normalizePcsForm(FORM_P12);
+  assert.equal(d.machine, 'P12'); assert.equal(d.model, '104D SILENCER FR PANEL');
+  assert.equal(d.date, '2026-09-30'); assert.equal(d.shift, 'Night');
+  assert.deepEqual(d.hourly.map(h => h.slot), ['20:00-21:00', '21:00-22:00', '22:00-23:00', '23:00-00:00', '00:00-01:00', '02:30-03:00',
+    '03:00-04:00', '04:00-05:00', '05:00-06:00', '06:00-07:00', '07:00-08:00']);
+  assert.equal(d.hourly[5].actual, 30, 'unclear 80 corrected from the cumulative 270 -> 300');
+  assert.equal(d.hourly.reduce((s, h) => s + h.actual, 0), 600);
+  assert.equal(d.hourly.reduce((s, h) => s + h.plan, 0), 600);
+  assert.equal(d.hourly[0].remark, 'SS: START-8:30');
+  assert.equal(d.okQty, 660); assert.equal(d.operator, 'Vaurz');
+  assert.ok(d.warnings.some(w => /2\.3-3/.test(w)), 'warns about row 2.3-3');
+  assert.ok(d.warnings.some(w => /OK total on the form is 660/.test(w)), 'warns OK 660 vs 600');
 });
