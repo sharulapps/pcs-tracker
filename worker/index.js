@@ -1,18 +1,29 @@
 /**
  * PCS Output Tracker — Cloudflare Worker
  *
- *   GET    /api/health            which backends are configured
- *   GET    /api/health?check=1    also signs in to Google and reads Firestore, and reports the error if one fails
- *   POST   /api/extract           { imageBase64, mimeType } -> Gemini -> structured PCS JSON
- *   GET    /api/records?from&to   list PCS records (date range, YYYY-MM-DD)
- *   POST   /api/records           save a reviewed PCS record (one per date/shift/machine/model; re-saving replaces it)
- *   DELETE /api/records/:id       delete a record
- *   GET    /api/plans?from&to     list plan entries from the monthly plan
- *   POST   /api/plans             { month, meta, entries } replace one month's plan
- *   GET    /api/plan-meta         list imported plan months
+ * Public
+ *   GET    /api/health            which backends are configured (?check=1 also signs in to Google and reads Firestore)
+ *   GET    /api/config            Firebase web config for Google sign-in (null when sign-in is off)
+ * Signed in (Firebase ID token in "Authorization: Bearer …"; or X-App-Token when sign-in is off)
+ *   GET    /api/me                the signed-in user, role and plants
+ *   GET    /api/records?plant&from&to      PCS records of one plant
+ *   POST   /api/records           { plant, …record }  save (one per date/shift/machine/model; re-saving replaces it)
+ *   DELETE /api/records/:id?plant=M1
+ *   GET    /api/plans?plant&from&to        plan entries of one plant
+ *   POST   /api/plans             { plant, month, meta, entries }  replace one month's plan
+ *   GET    /api/plan-meta?plant=M1         imported plan months
+ *   POST   /api/extract           { imageBase64, mimeType } -> Gemini -> PCS draft
  *   POST   /api/summary           { stats, lang } -> Gemini summary of the dashboard figures
+ * Admin
+ *   PUT    /api/plants            { plants: [{ code, name }] }
+ *   GET    /api/users ; PUT /api/users { email, name, role, plants } ; DELETE /api/users/:email
+ *   POST   /api/admin/migrate     { plant }  move data saved before plants existed into that plant
  *
- * Everything else is served from ./public (static assets).
+ * Roles: admin (everything), manager (view), planner (view + upload plan + scan), supervisor (view + scan).
+ * Each user is limited to the plants listed on their user record ("*" = all).
+ *
+ * Firestore layout: plants/{code}/pcs_records, plants/{code}/pcs_plans, plants/{code}/pcs_plan_meta,
+ *                   pcs_config/plants, pcs_users/{email}
  *
  * Secrets (wrangler secret put ...):
  *   GEMINI_API_KEY          Google AI Studio key; several keys may be given, separated by commas
@@ -21,8 +32,13 @@
  *   FIREBASE_PROJECT_ID     e.g. pcs-tracker-12345
  *   FIREBASE_CLIENT_EMAIL   service account email
  *   FIREBASE_PRIVATE_KEY    service account private key (PEM, \n escaped is fine)
- *   APP_TOKEN               optional shared token; clients send it as X-App-Token
- * Vars (wrangler.toml):
+ *   APP_TOKEN               shared token, used only while Google sign-in is off
+ * Vars:
+ *   FIREBASE_WEB_API_KEY    Firebase web app apiKey; setting it turns on Google sign-in
+ *   FIREBASE_AUTH_DOMAIN    default "<project>.firebaseapp.com"
+ *   FIREBASE_APP_ID         Firebase web app appId (optional)
+ *   ADMIN_EMAILS            comma-separated Google accounts that are always admin
+ *   PLANTS                  starting plant list before an admin edits it, e.g. "M1,M2,M3,M4,M5"
  *   GEMINI_MODEL            default "gemini-3.6-flash"
  *   GEMINI_FALLBACK_MODEL   used when the main model is busy or over quota; default "gemini-3.5-flash-lite", "" to turn off
  *   ALLOWED_ORIGIN          CORS origin when the page is hosted elsewhere, default "*"
@@ -31,7 +47,16 @@
 const COLLECTION = 'pcs_records';
 const PLANS = 'pcs_plans';
 const PLAN_META = 'pcs_plan_meta';
+const USERS = 'pcs_users';
+const CONFIG = 'pcs_config';
 const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
+export const ROLES = ['admin', 'manager', 'planner', 'supervisor'];
+const CAN = {
+  view: ROLES,
+  scan: ['admin', 'planner', 'supervisor'],
+  plan: ['admin', 'planner'],
+  admin: ['admin'],
+};
 
 export default {
   async fetch(request, env) {
@@ -46,7 +71,7 @@ export default {
         const check = {};
         if (url.searchParams.has('check')) {
           try { await googleAccessToken(env); check.googleAuth = 'ok'; } catch (e) { check.googleAuth = e.message; }
-          try { await firestore(env, `/${PLAN_META}?pageSize=1`); check.firestoreRead = 'ok'; } catch (e) { check.firestoreRead = e.message; }
+          try { await firestore(env, `/${CONFIG}?pageSize=1`); check.firestoreRead = 'ok'; } catch (e) { check.firestoreRead = e.message; }
         }
         const missing = ['GEMINI_API_KEY', 'FIREBASE_PROJECT_ID', 'FIREBASE_CLIENT_EMAIL', 'FIREBASE_PRIVATE_KEY'].filter(k => !env[k]);
         return json(env, {
@@ -56,58 +81,128 @@ export default {
           gemini: geminiKeys(env).length > 0,
           geminiKeys: geminiKeys(env).length,
           firestore: !!(env.FIREBASE_PROJECT_ID && env.FIREBASE_CLIENT_EMAIL && env.FIREBASE_PRIVATE_KEY),
+          signIn: authEnabled(env),
           model: geminiModels(env)[0],
           fallbackModels: geminiModels(env).slice(1),
         });
       }
 
-      if (env.APP_TOKEN && request.headers.get('X-App-Token') !== env.APP_TOKEN) {
-        return json(env, { error: 'Wrong or missing app token. Set it under Settings.' }, 401);
+      if (url.pathname === '/api/config') {
+        return json(env, { auth: authEnabled(env) ? {
+          apiKey: env.FIREBASE_WEB_API_KEY,
+          authDomain: env.FIREBASE_AUTH_DOMAIN || `${env.FIREBASE_PROJECT_ID}.firebaseapp.com`,
+          projectId: env.FIREBASE_PROJECT_ID,
+          ...(env.FIREBASE_APP_ID ? { appId: env.FIREBASE_APP_ID } : {}),
+        } : null });
+      }
+
+      const user = await authenticate(request, env);
+      const need = (perm, plant) => {
+        if (!CAN[perm].includes(user.role)) throw httpError(`Your role (${user.role}) cannot do this.`, 403);
+        if (plant !== undefined && !canPlant(user, plant)) throw httpError(`You do not have access to plant ${plant}.`, 403);
+      };
+      const plantOf = async (v) => {
+        const code = str(v, 20);
+        if (!code) throw httpError('Choose a plant first.', 400);
+        const plants = await getPlants(env);
+        if (!plants.some(p => p.code === code)) throw httpError(`Unknown plant "${code}".`, 400);
+        return code;
+      };
+      const P = code => `plants/${code}`;
+      const range = () => {
+        const from = url.searchParams.get('from') || '0000-01-01';
+        const to = url.searchParams.get('to') || '9999-12-31';
+        if (!isDate(from) || !isDate(to)) throw httpError('from/to must be YYYY-MM-DD', 400);
+        return [from, to];
+      };
+
+      if (url.pathname === '/api/me' && request.method === 'GET') {
+        const plants = await getPlants(env);
+        return json(env, {
+          user: { email: user.email, name: user.name, role: user.role, plants: user.plants },
+          plants: plants.filter(p => canPlant(user, p.code)),
+        });
       }
 
       if (url.pathname === '/api/summary' && request.method === 'POST') {
+        need('view');
         return json(env, { summary: await summarize(env, await request.json()) });
       }
 
       if (url.pathname === '/api/extract' && request.method === 'POST') {
-        const body = await request.json();
-        return json(env, { data: await extractPcs(env, body) });
+        need('scan');
+        return json(env, { data: await extractPcs(env, await request.json()) });
       }
 
       if (url.pathname === '/api/records' && request.method === 'GET') {
-        const from = url.searchParams.get('from') || '0000-01-01';
-        const to = url.searchParams.get('to') || '9999-12-31';
-        if (!isDate(from) || !isDate(to)) return json(env, { error: 'from/to must be YYYY-MM-DD' }, 400);
-        return json(env, { records: await listRecords(env, from, to) });
+        const plant = await plantOf(url.searchParams.get('plant')); need('view', plant);
+        const [from, to] = range();
+        return json(env, { records: await queryRange(env, P(plant), COLLECTION, from, to) });
       }
 
       if (url.pathname === '/api/records' && request.method === 'POST') {
-        const rec = sanitizeRecord(await request.json());
-        return json(env, await upsertRecord(env, rec), 201);
+        const body = await request.json();
+        const plant = await plantOf(body?.plant); need('scan', plant);
+        const rec = { ...sanitizeRecord(body), plant, savedBy: user.email };
+        return json(env, await upsertRecord(env, P(plant), rec), 201);
+      }
+
+      const del = url.pathname.match(/^\/api\/records\/([A-Za-z0-9_-]{1,160})$/);
+      if (del && request.method === 'DELETE') {
+        const plant = await plantOf(url.searchParams.get('plant')); need('scan', plant);
+        await firestore(env, `/${P(plant)}/${COLLECTION}/${del[1]}`, { method: 'DELETE' });
+        return json(env, { ok: true });
       }
 
       if (url.pathname === '/api/plans' && request.method === 'GET') {
-        const from = url.searchParams.get('from') || '0000-01-01';
-        const to = url.searchParams.get('to') || '9999-12-31';
-        if (!isDate(from) || !isDate(to)) return json(env, { error: 'from/to must be YYYY-MM-DD' }, 400);
-        return json(env, { plans: await queryRange(env, PLANS, from, to) });
+        const plant = await plantOf(url.searchParams.get('plant')); need('view', plant);
+        const [from, to] = range();
+        return json(env, { plans: await queryRange(env, P(plant), PLANS, from, to) });
       }
 
       if (url.pathname === '/api/plans' && request.method === 'POST') {
         const body = await request.json();
-        return json(env, await replaceMonthPlan(env, body), 201);
+        const plant = await plantOf(body?.plant); need('plan', plant);
+        return json(env, await replaceMonthPlan(env, P(plant), { ...body, importedBy: user.email }), 201);
       }
 
       if (url.pathname === '/api/plan-meta' && request.method === 'GET') {
-        const out = await firestore(env, `/${PLAN_META}?pageSize=100`);
+        const plant = await plantOf(url.searchParams.get('plant')); need('view', plant);
+        const out = await firestore(env, `/${P(plant)}/${PLAN_META}?pageSize=100`);
         const metas = (out.documents || []).map(docToRecord).sort((a, b) => b.month.localeCompare(a.month));
         return json(env, { metas });
       }
 
-      const m = url.pathname.match(/^\/api\/records\/([A-Za-z0-9_-]{1,128})$/);
-      if (m && request.method === 'DELETE') {
-        await firestore(env, `/${COLLECTION}/${m[1]}`, { method: 'DELETE' });
+      if (url.pathname === '/api/plants' && request.method === 'PUT') {
+        need('admin');
+        return json(env, { plants: await savePlants(env, (await request.json())?.plants) });
+      }
+
+      if (url.pathname === '/api/users' && request.method === 'GET') {
+        need('admin');
+        const out = await firestore(env, `/${USERS}?pageSize=300`);
+        const users = (out.documents || []).map(docToRecord).sort((a, b) => a.email.localeCompare(b.email));
+        return json(env, { users, adminEmails: adminEmails(env) });
+      }
+
+      if (url.pathname === '/api/users' && request.method === 'PUT') {
+        need('admin');
+        return json(env, { user: await saveUser(env, await request.json(), user.email) });
+      }
+
+      const du = url.pathname.match(/^\/api\/users\/([^/]{3,200})$/);
+      if (du && request.method === 'DELETE') {
+        need('admin');
+        const email = decodeURIComponent(du[1]).toLowerCase();
+        await firestore(env, `/${USERS}/${encodeURIComponent(email)}`, { method: 'DELETE' });
+        userCache.delete(email);
         return json(env, { ok: true });
+      }
+
+      if (url.pathname === '/api/admin/migrate' && request.method === 'POST') {
+        need('admin');
+        const plant = await plantOf((await request.json())?.plant);
+        return json(env, await migrateLegacy(env, P(plant)));
       }
 
       return json(env, { error: 'Not found' }, 404);
@@ -119,14 +214,136 @@ export default {
 };
 
 /* ------------------------------------------------------------------ */
+/* Sign-in, users and plants                                            */
+/* ------------------------------------------------------------------ */
+
+const authEnabled = env => !!env.FIREBASE_WEB_API_KEY;
+const adminEmails = env => String(env.ADMIN_EMAILS || '').toLowerCase().split(/[\s,]+/).filter(Boolean);
+const canPlant = (user, code) => user.plants.includes('*') || user.plants.includes(code);
+
+const b64urlToBytes = s => Uint8Array.from(atob(s.replace(/-/g, '+').replace(/_/g, '/') + '==='.slice((s.length + 3) % 4)), c => c.charCodeAt(0));
+const b64urlJson = s => JSON.parse(new TextDecoder().decode(b64urlToBytes(s)));
+
+let jwkCache = { keys: null, exp: 0 };
+const JWK_URL = 'https://www.googleapis.com/service_accounts/v1/jwk/securetoken@system.gserviceaccount.com';
+async function firebaseKeys() {
+  if (jwkCache.keys && jwkCache.exp > Date.now()) return jwkCache.keys;
+  const res = await fetch(JWK_URL);
+  if (!res.ok) throw httpError('Could not fetch Google sign-in keys', 502);
+  const body = await res.json();
+  const maxAge = Number((res.headers.get('cache-control') || '').match(/max-age=(\d+)/)?.[1] || 3600);
+  jwkCache = { keys: body.keys || [], exp: Date.now() + maxAge * 1000 };
+  return jwkCache.keys;
+}
+
+/** Verify a Firebase Auth ID token (RS256, Google's securetoken keys). Returns its claims. */
+export async function verifyIdToken(env, token) {
+  const parts = String(token || '').split('.');
+  if (parts.length !== 3) throw httpError('Sign in again.', 401);
+  let header, claims;
+  try { header = b64urlJson(parts[0]); claims = b64urlJson(parts[1]); } catch { throw httpError('Sign in again.', 401); }
+  if (header.alg !== 'RS256') throw httpError('Sign in again.', 401);
+  const jwk = (await firebaseKeys()).find(k => k.kid === header.kid);
+  if (!jwk) { jwkCache.exp = 0; throw httpError('Sign in again.', 401); }
+  const key = await crypto.subtle.importKey('jwk', { kty: jwk.kty, n: jwk.n, e: jwk.e, alg: 'RS256', ext: true },
+    { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' }, false, ['verify']);
+  const ok = await crypto.subtle.verify('RSASSA-PKCS1-v1_5', key, b64urlToBytes(parts[2]), new TextEncoder().encode(`${parts[0]}.${parts[1]}`));
+  const now = Math.floor(Date.now() / 1000), pid = env.FIREBASE_PROJECT_ID;
+  if (!ok || claims.aud !== pid || claims.iss !== `https://securetoken.google.com/${pid}` || !claims.sub
+    || !(claims.exp > now) || claims.iat > now + 300) throw httpError('Your sign-in has expired. Sign in again.', 401);
+  if (!claims.email || claims.email_verified !== true) throw httpError('This Google account has no verified email.', 403);
+  return claims;
+}
+
+const userCache = new Map(); // email -> { user, exp }
+async function getUser(env, email, name) {
+  if (adminEmails(env).includes(email)) return { email, name, role: 'admin', plants: ['*'] };
+  const hit = userCache.get(email);
+  if (hit && hit.exp > Date.now()) return { ...hit.user, name: hit.user.name || name };
+  const doc = await firestore(env, `/${USERS}/${encodeURIComponent(email)}`, {}, { allow404: true });
+  const u = doc ? docToRecord(doc) : null;
+  const user = u && ROLES.includes(u.role) ? { email, name: u.name || name, role: u.role, plants: Array.isArray(u.plants) ? u.plants : [] } : null;
+  userCache.set(email, { user, exp: Date.now() + 60000 });
+  if (!user) throw httpError(`${email} has not been given access yet. Ask an admin to add this email under Settings → Users.`, 403);
+  return user;
+}
+
+async function authenticate(request, env) {
+  if (!authEnabled(env)) {
+    if (env.APP_TOKEN && request.headers.get('X-App-Token') !== env.APP_TOKEN) {
+      throw httpError('Wrong or missing app token. Set it under Settings.', 401);
+    }
+    return { email: 'app-token', name: 'App token', role: 'admin', plants: ['*'] };
+  }
+  const m = (request.headers.get('Authorization') || '').match(/^Bearer\s+(.+)$/i);
+  if (!m) throw httpError('Sign in with Google to continue.', 401);
+  const claims = await verifyIdToken(env, m[1]);
+  return getUser(env, String(claims.email).toLowerCase(), claims.name || '');
+}
+
+const PLANT_RE = /^[A-Za-z0-9_-]{1,20}$/;
+let plantCache = { plants: null, exp: 0 };
+export async function getPlants(env) {
+  if (plantCache.plants && plantCache.exp > Date.now()) return plantCache.plants;
+  const doc = await firestore(env, `/${CONFIG}/plants`, {}, { allow404: true });
+  let plants = doc ? (docToRecord(doc).plants || []) : [];
+  if (!plants.length) plants = String(env.PLANTS || 'M1').split(/[\s,]+/).filter(c => PLANT_RE.test(c)).map(code => ({ code, name: code }));
+  plantCache = { plants, exp: Date.now() + 60000 };
+  return plants;
+}
+async function savePlants(env, list) {
+  const plants = (Array.isArray(list) ? list : []).slice(0, 50)
+    .map(p => ({ code: str(p?.code, 20).toUpperCase(), name: str(p?.name, 80) }))
+    .filter(p => PLANT_RE.test(p.code)).map(p => ({ ...p, name: p.name || p.code }));
+  if (!plants.length) throw httpError('Add at least one plant (code: letters, digits, - or _).', 400);
+  if (new Set(plants.map(p => p.code)).size !== plants.length) throw httpError('Plant codes must be unique.', 400);
+  await firestore(env, `/${CONFIG}/plants`, { method: 'PATCH', body: JSON.stringify({ fields: toFs({ plants }).mapValue.fields }) });
+  plantCache = { plants, exp: Date.now() + 60000 };
+  return plants;
+}
+async function saveUser(env, body, by) {
+  const email = str(body?.email, 200).toLowerCase();
+  if (!/^[^\s@/]+@[^\s@/]+\.[^\s@/]+$/.test(email)) throw httpError('Enter a valid email address.', 400);
+  if (!ROLES.includes(body?.role)) throw httpError(`Role must be one of: ${ROLES.join(', ')}.`, 400);
+  const known = (await getPlants(env)).map(p => p.code);
+  const plants = (Array.isArray(body.plants) ? body.plants : []).map(p => str(p, 20)).filter(p => p === '*' || known.includes(p));
+  if (!plants.length) throw httpError('Give the user at least one plant.', 400);
+  const user = { email, name: str(body.name, 80), role: body.role, plants: plants.includes('*') ? ['*'] : [...new Set(plants)], updatedBy: by, updatedAt: new Date().toISOString() };
+  await firestore(env, `/${USERS}/${encodeURIComponent(email)}`, { method: 'PATCH', body: JSON.stringify({ fields: toFs(user).mapValue.fields }) });
+  userCache.delete(email);
+  return user;
+}
+
+/** Move documents saved before plants existed (top-level collections) into plants/{code}/… */
+async function migrateLegacy(env, prefix) {
+  const moved = {};
+  for (const coll of [COLLECTION, PLANS, PLAN_META]) {
+    let pageToken = '', n = 0;
+    do {
+      const out = await firestore(env, `/${coll}?pageSize=300${pageToken ? `&pageToken=${encodeURIComponent(pageToken)}` : ''}`);
+      const writes = [];
+      (out.documents || []).forEach(d => {
+        const id = d.name.split('/').pop();
+        writes.push({ update: { name: docName(env, `${prefix}/${coll}`, id), fields: d.fields || {} } }, { delete: d.name });
+      });
+      if (writes.length) await batchWrite(env, writes);
+      n += writes.length / 2;
+      pageToken = out.nextPageToken || '';
+    } while (pageToken);
+    moved[coll] = n;
+  }
+  return { moved };
+}
+
+/* ------------------------------------------------------------------ */
 /* Helpers                                                              */
 /* ------------------------------------------------------------------ */
 
 function cors(env) {
   return {
     'Access-Control-Allow-Origin': env.ALLOWED_ORIGIN || '*',
-    'Access-Control-Allow-Methods': 'GET,POST,DELETE,OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type,X-App-Token',
+    'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type,X-App-Token,Authorization',
   };
 }
 function json(env, data, status = 200) {
@@ -520,6 +737,7 @@ Rules:
 - Name machines and models exactly as given.
 - tone: good = on or above plan; warn = 90-99% or a data gap; crit = below 90% or a large loss; info = neutral fact.
 - If there is no plan for the month, say the monthly plan has not been imported and focus on actual output and data.
+- When "plant" says All plants, start with a comparison of the plants (byPlant), then go into machines; machine names carry the plant code.
 - Write 6 to 12 points. Skip a category that has nothing to report rather than padding it.
 - actions: 3 to 5, each naming the machine/model or form and what to do; priority high for the biggest loss or risk.
 
@@ -632,10 +850,11 @@ export function fromFs(v) {
 }
 const docToRecord = doc => ({ id: doc.name.split('/').pop(), ...fromFs({ mapValue: { fields: doc.fields || {} } }) });
 
-async function upsertRecord(env, rec) {
+async function upsertRecord(env, prefix, rec) {
   const id = slug(rec.date, rec.shift, rec.machine, rec.model);
-  const existing = await firestore(env, `/${COLLECTION}/${id}`, {}, { allow404: true });
-  const doc = await firestore(env, `/${COLLECTION}/${id}`, {
+  const path = `/${prefix}/${COLLECTION}/${id}`;
+  const existing = await firestore(env, path, {}, { allow404: true });
+  const doc = await firestore(env, path, {
     method: 'PATCH',
     body: JSON.stringify({ fields: toFs(rec).mapValue.fields }),
   });
@@ -648,7 +867,7 @@ async function batchWrite(env, writes) {
   }
 }
 
-async function replaceMonthPlan(env, body) {
+async function replaceMonthPlan(env, prefix, body) {
   const month = String(body?.month || '');
   if (!/^\d{4}-\d{2}$/.test(month)) throw httpError('month must be YYYY-MM', 400);
   const entries = (Array.isArray(body.entries) ? body.entries : []).slice(0, 20000).map(e => sanitizePlanEntry(e, month)).filter(Boolean);
@@ -656,7 +875,7 @@ async function replaceMonthPlan(env, body) {
   const keep = new Map(entries.map(e => [slug(e.date, e.shift, e.machine, e.model), e]));
 
   // Remove last import's entries that are not in this revision.
-  const old = await firestore(env, ':runQuery', {
+  const old = await firestore(env, `/${prefix}:runQuery`, {
     method: 'POST',
     body: JSON.stringify({
       structuredQuery: {
@@ -667,27 +886,24 @@ async function replaceMonthPlan(env, body) {
     }),
   });
   const writes = old.filter(r => r.document).map(r => r.document.name.split('/').pop())
-    .filter(id => !keep.has(id)).map(id => ({ delete: docName(env, PLANS, id) }));
-  keep.forEach((e, id) => writes.push({ update: { name: docName(env, PLANS, id), fields: toFs(e).mapValue.fields } }));
+    .filter(id => !keep.has(id)).map(id => ({ delete: docName(env, `${prefix}/${PLANS}`, id) }));
+  keep.forEach((e, id) => writes.push({ update: { name: docName(env, `${prefix}/${PLANS}`, id), fields: toFs(e).mapValue.fields } }));
   const m = body.meta || {};
   const meta = {
     month,
     sheet: str(m.sheet, 80), title: str(m.title, 160), revision: str(m.revision, 20), docNo: str(m.docNo, 40),
     issued: str(m.issued, 20), fileName: str(m.fileName, 200),
     entries: entries.length, total: entries.reduce((s, e) => s + e.qty, 0), importedAt: new Date().toISOString(),
+    importedBy: str(body.importedBy, 200),
   };
-  writes.push({ update: { name: docName(env, PLAN_META, month), fields: toFs(meta).mapValue.fields } });
+  writes.push({ update: { name: docName(env, `${prefix}/${PLAN_META}`, month), fields: toFs(meta).mapValue.fields } });
   await batchWrite(env, writes);
   return { saved: entries.length, removed: writes.filter(w => w.delete).length, meta };
 }
 
-async function listRecords(env, from, to) {
-  return queryRange(env, COLLECTION, from, to);
-}
-
-async function queryRange(env, collectionId, from, to) {
+async function queryRange(env, prefix, collectionId, from, to) {
   // Range + orderBy on the same field needs no composite index.
-  const rows = await firestore(env, ':runQuery', {
+  const rows = await firestore(env, `/${prefix}:runQuery`, {
     method: 'POST',
     body: JSON.stringify({
       structuredQuery: {

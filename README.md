@@ -85,11 +85,36 @@ Settings → *Reset demo data* restores the samples.
    npx wrangler secret put FIREBASE_PROJECT_ID      # project_id from the JSON
    npx wrangler secret put FIREBASE_CLIENT_EMAIL    # client_email from the JSON
    npx wrangler secret put FIREBASE_PRIVATE_KEY     # private_key from the JSON
-   npx wrangler secret put APP_TOKEN                # optional shared password
+   npx wrangler secret put APP_TOKEN                # optional shared password until Google sign-in is set up
    npx wrangler deploy
    ```
    The Worker serves `public/` and `/api/*` on the same URL. Opening it switches the app to **Live · Firestore**.
    If you set `APP_TOKEN`, enter it once under Settings on each device.
+
+### Plants and Google sign-in
+
+Five plants (M1–M5 to start) share the same plan Excel, PCS form and shifts. Every plan entry and PCS record belongs to one plant
+(`plants/{code}/…` in Firestore). The header has a plant picker; **All plants** adds a by-plant comparison and shows machines as `M2 · P9`.
+
+Sign-in is with Google (Firebase Authentication). Only accounts an admin has added can use the app:
+
+| Role | Can |
+|---|---|
+| admin | everything, manage plants and users |
+| planner | view, upload the monthly plan, scan PCS |
+| supervisor | view, scan PCS |
+| manager | view (dashboard, records, AI summary) |
+
+Each user is limited to chosen plants (or all). Accounts in `ADMIN_EMAILS` are always admin for all plants.
+
+Setup:
+1. Firebase console → **Authentication** → Get started → Sign-in method → enable **Google**.
+2. Authentication → Settings → **Authorized domains** → add your Worker domain (e.g. `pcs-tracker.<account>.workers.dev`).
+3. Project settings → General → **Your apps** → add a **Web** app; copy `apiKey` (and `appId`).
+4. Cloudflare → Worker → Settings → Variables and Secrets: add `ADMIN_EMAILS` (your Google email) first, then `FIREBASE_WEB_API_KEY`
+   (and `FIREBASE_APP_ID`). Setting `FIREBASE_WEB_API_KEY` turns sign-in on; `APP_TOKEN` is then no longer used.
+5. Sign in, open Settings → **Plants** to name the plants, and **Users** to add each person with a role and plants.
+6. Data saved before plants existed: Settings → Plants → choose the plant → **Move it into this plant** (once).
 
 ### AI summary
 

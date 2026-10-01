@@ -181,6 +181,34 @@ input:focus, select:focus { border-color: var(--accent); outline: none; box-shad
 .meter > b { position: absolute; top: -5px; bottom: -5px; width: 2px; background: var(--ink-2); border-radius: 2px; }
 .meter-legend { display: flex; justify-content: space-between; font-size: 11px; color: var(--muted); font-family: var(--font-data); }
 
+/* Sign-in gate, plant picker, user chip */
+.gate { position: fixed; inset: 0; z-index: 100; display: grid; place-items: center; padding: 24px 16px; background:
+  radial-gradient(700px 360px at 20% 0%, var(--bg-halo), transparent 70%), radial-gradient(700px 360px at 100% 100%, var(--bg-halo-2), transparent 70%), var(--bg); }
+.gate-card { width: min(100%, 420px); background: linear-gradient(180deg, var(--surface-hi), var(--surface)); border: 1px solid var(--line); border-radius: 20px; box-shadow: var(--shadow); padding: 32px 28px; display: flex; flex-direction: column; gap: 16px; text-align: center; align-items: center; }
+.gate-card .logo { width: 56px; height: 56px; border-radius: 16px; }
+.gate-card .logo svg { width: 34px; height: 34px; }
+.gate-card h2 { font-size: 22px; font-weight: 750; font-stretch: 115%; }
+.gate-card p { margin: 0; color: var(--ink-2); font-size: 14px; max-width: 34ch; }
+.gate-msg { font-size: 13px; color: var(--ink-2); min-height: 1.5em; }
+.gate-msg.err { color: var(--crit-ink); }
+.gbtn { display: inline-flex; align-items: center; gap: 10px; padding: 11px 18px; border-radius: 999px; border: 1px solid var(--line); background: var(--raise); color: var(--ink); font-weight: 600; cursor: pointer; min-height: 46px; }
+.gbtn:hover { border-color: var(--accent); }
+.gbtn svg { width: 18px; height: 18px; }
+.plant-pick select { min-height: 34px; padding: 5px 30px 5px 12px; border-radius: 999px; font-weight: 600; font-size: 13px; background: var(--surface); }
+.user-chip { display: inline-flex; align-items: center; gap: 8px; border: 1px solid var(--line); background: var(--surface); border-radius: 999px; padding: 3px 10px 3px 3px; cursor: pointer; font-size: 12px; color: var(--ink-2); max-width: 220px; }
+.user-chip img, .user-chip .ini { width: 26px; height: 26px; border-radius: 50%; flex: none; }
+.user-chip .ini { display: grid; place-items: center; background: var(--accent-wash); color: var(--accent); font-weight: 700; font-size: 11px; }
+.user-chip span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.role-tag { font-family: var(--font-data); font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.08em; padding: 1px 7px; border-radius: 5px; border: 1px solid var(--line); color: var(--accent); }
+.plant-tag { font-family: var(--font-data); font-size: 10.5px; font-weight: 600; padding: 1px 6px; border-radius: 5px; background: var(--accent-wash); color: var(--accent); }
+.checks { display: flex; flex-wrap: wrap; gap: 6px 14px; }
+.checks label { display: inline-flex; gap: 6px; align-items: center; font-size: 13px; text-transform: none; letter-spacing: 0; font-weight: 500; color: var(--ink); }
+#accountGrid { align-items: start; }
+.no-scan #tblRecords [data-act="del"] { display: none; }
+.plant-rows { display: flex; flex-direction: column; gap: 8px; }
+.plant-rows .row { display: grid; grid-template-columns: 110px 1fr auto; gap: 8px; }
+@media (max-width: 560px) { .plant-rows .row { grid-template-columns: 90px 1fr auto; } .user-chip span { display: none; } }
+
 /* AI summary */
 .ai-card { position: relative; overflow: hidden; border-color: color-mix(in srgb, var(--accent) 35%, var(--line)); }
 .ai-card::before { content: ""; position: absolute; inset: 0 0 auto 0; height: 2px; background: linear-gradient(90deg, transparent, var(--accent-2), var(--accent), transparent); }
@@ -351,16 +379,29 @@ code { font-family: var(--font-data); font-size: 12px; background: var(--surface
 </head>
 <body>
 
+<div class="gate" id="gate" hidden>
+  <div class="gate-card">
+    <span class="logo" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><path d="M4.5 16.5a7.5 7.5 0 1 1 15 0" style="stroke:var(--accent)" stroke-width="2.2" stroke-linecap="round"/><path d="M12 16.5l4.2-4.8" style="stroke:var(--ink)" stroke-width="2" stroke-linecap="round"/><circle cx="12" cy="16.5" r="1.9" style="fill:var(--ink)"/></svg></span>
+    <h2>Production Output</h2>
+    <p id="gateText">Sign in with your Google account to see plan vs actual for your plants.</p>
+    <button class="gbtn" id="btnGoogle" hidden><svg viewBox="0 0 48 48" aria-hidden="true"><path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3C33.7 32.7 29.2 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.8 1.2 7.9 3.1l5.7-5.7C34 6.1 29.3 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.3-.1-2.4-.4-3.5z"/><path fill="#FF3D00" d="M6.3 14.7l6.6 4.8C14.7 15.1 19 12 24 12c3.1 0 5.8 1.2 7.9 3.1l5.7-5.7C34 6.1 29.3 4 24 4 16.3 4 9.7 8.3 6.3 14.7z"/><path fill="#4CAF50" d="M24 44c5.2 0 9.9-2 13.4-5.2l-6.2-5.2C29.2 35.1 26.7 36 24 36c-5.2 0-9.6-3.3-11.3-7.9l-6.5 5C9.5 39.6 16.2 44 24 44z"/><path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.2-2.2 4.2-4.1 5.6l6.2 5.2C37 39.2 44 34 44 24c0-1.3-.1-2.4-.4-3.5z"/></svg>Sign in with Google</button>
+    <button class="btn small ghost" id="btnGateOut" hidden>Use another account</button>
+    <div class="gate-msg" id="gateMsg"></div>
+  </div>
+</div>
+
 <header class="top">
   <div class="top-inner">
     <div class="brand">
       <span class="logo" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><path d="M4.5 16.5a7.5 7.5 0 1 1 15 0" style="stroke:var(--accent)" stroke-width="2.2" stroke-linecap="round"/><path d="M12 16.5l4.2-4.8" style="stroke:var(--ink)" stroke-width="2" stroke-linecap="round"/><circle cx="12" cy="16.5" r="1.9" style="fill:var(--ink)"/></svg></span>
       <div class="brand-text">
         <h1>Production Output</h1>
-        <span class="sub">M1 · FR-PROD-001 · Plan vs Actual</span>
+        <span class="sub" id="brandSub">M1 · FR-PROD-001 · Plan vs Actual</span>
       </div>
     </div>
+    <div class="plant-pick" id="plantPick" hidden><select id="hPlant" aria-label="Plant"></select></div>
     <span id="modePill" class="mode-pill">Demo data</span>
+    <button class="user-chip" id="userChip" hidden title="Account"></button>
     <nav class="tabs" role="tablist" aria-label="Sections">
       <button role="tab" id="tab-dashboard" aria-selected="true" data-view="dashboard">Dashboard</button>
       <button role="tab" id="tab-plan" aria-selected="false" data-view="plan">Monthly plan</button>
@@ -436,6 +477,11 @@ code { font-family: var(--font-data); font-size: 12px; background: var(--surface
       </div>
     </div>
 
+    <div class="panel" id="plantPanel" hidden>
+      <div class="panel-head"><h2>By plant</h2><span class="hint" id="plantHint"></span></div>
+      <div class="table-wrap"><table id="tblPlants"></table></div>
+    </div>
+
     <div class="panel">
       <div class="panel-head"><h2>By machine and model</h2><span class="hint" id="machineHint"></span></div>
       <div class="table-wrap"><table id="tblMachines"></table></div>
@@ -447,10 +493,11 @@ code { font-family: var(--font-data); font-size: 12px; background: var(--surface
     <div class="panel stack">
       <div class="panel-head" style="margin:0"><h2>Import monthly production plan</h2><span class="hint">Excel, format FR-PROD-001</span></div>
       <p style="margin:0;color:var(--ink-2);max-width:72ch">Upload the PRODUCTION PLAN SUMMARY workbook. Each row is a machine and model with its output per hour (a figure in brackets is ignored). Each date cell is the plan quantity: <code>D-120</code> is day shift, <code>N-200</code> is night shift, and a plain number counts as day shift. The highest <code>REV</code> sheet is picked automatically.</p>
-      <div class="file-row">
+      <div class="file-row" id="planUploadRow">
         <label class="btn primary" for="planFile">Choose Excel file</label>
         <input type="file" id="planFile" accept=".xlsx,.xlsm,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel" hidden>
         <span class="file-name" id="planFileName">No file chosen</span>
+        <div class="field" id="planPlantField"><label for="planPlant">Plant</label><select id="planPlant"></select></div>
         <div class="field" id="sheetField" hidden><label for="planSheet">Sheet</label><select id="planSheet"></select></div>
       </div>
       <div class="progress" id="planProgress" hidden><span class="spinner"></span><span>Reading workbook…</span></div>
@@ -501,6 +548,7 @@ code { font-family: var(--font-data); font-size: 12px; background: var(--surface
         <div id="reviewBody" class="stack" hidden>
           <div id="reviewNotices" class="stack"></div>
           <div class="form-grid">
+            <div class="field"><label for="dPlant">Plant</label><select id="dPlant"></select></div>
             <div class="field"><label for="dDate">Date</label><input type="date" id="dDate"></div>
             <div class="field"><label for="dShift">Shift</label><select id="dShift"><option value="Day">Day (D)</option><option value="Night">Night (N)</option></select></div>
             <div class="field"><label for="dMachine">Machine</label><input type="text" id="dMachine" list="machineList"></div>
@@ -541,12 +589,37 @@ code { font-family: var(--font-data); font-size: 12px; background: var(--surface
 
   <!-- SETTINGS -->
   <section class="view" id="view-settings" hidden>
+    <div class="grid-2" id="accountGrid" hidden>
+      <div class="panel stack">
+        <div class="panel-head" style="margin:0"><h2>Your account</h2><span class="role-tag" id="accRole"></span></div>
+        <div class="chips" id="accInfo"></div>
+        <div class="row-actions"><button class="btn" id="btnSignOut">Sign out</button></div>
+      </div>
+      <div class="panel stack" id="plantsAdmin" hidden>
+        <div class="panel-head" style="margin:0"><h2>Plants</h2><span class="hint">Admin</span></div>
+        <div class="plant-rows" id="plantRows"></div>
+        <div class="row-actions"><button class="btn" id="btnAddPlant">Add plant</button><button class="btn primary" id="btnSavePlants">Save plants</button></div>
+        <div class="field"><label for="migPlant">Data saved before plants existed</label>
+          <div class="file-row"><select id="migPlant"></select><button class="btn" id="btnMigrate">Move it into this plant</button></div></div>
+      </div>
+    </div>
+    <div class="panel stack" id="usersAdmin" hidden>
+      <div class="panel-head" style="margin:0"><h2>Users</h2><span class="hint">Only these Google accounts can sign in</span></div>
+      <div class="form-grid">
+        <div class="field"><label for="uEmail">Google email</label><input type="text" id="uEmail" inputmode="email" placeholder="name@gmail.com"></div>
+        <div class="field"><label for="uName">Name</label><input type="text" id="uName"></div>
+        <div class="field"><label for="uRole">Role</label><select id="uRole"><option value="supervisor">Supervisor · view + scan PCS</option><option value="planner">Planner · view + upload plan + scan</option><option value="manager">Manager · view only</option><option value="admin">Admin · everything</option></select></div>
+      </div>
+      <div class="field"><label>Plants</label><div class="checks" id="uPlants"></div></div>
+      <div class="row-actions"><button class="btn ghost" id="btnUserClear">Clear</button><button class="btn primary" id="btnUserSave">Save user</button></div>
+      <div class="table-wrap"><table id="tblUsers"></table></div>
+    </div>
     <div class="grid-2">
       <div class="panel stack">
         <div class="panel-head" style="margin:0"><h2>Connection</h2><span id="connStatus" class="status warn"><i>▲</i>Demo mode</span></div>
         <p style="margin:0;color:var(--ink-2)" id="connText"></p>
         <div class="field"><label for="sApi">Worker URL</label><input type="url" id="sApi" placeholder="Blank = same site as this page"></div>
-        <div class="field"><label for="sToken">App token</label><input type="password" id="sToken" placeholder="Matches APP_TOKEN secret on the Worker"></div>
+        <div class="field" id="sTokenField"><label for="sToken">App token</label><input type="password" id="sToken" placeholder="Matches APP_TOKEN secret on the Worker"></div>
         <label class="check"><input type="checkbox" id="sDemo"> Always use demo mode (data stays in this browser)</label>
         <div class="form-grid">
           <div class="field"><label for="sDayStart">Day shift starts</label><input type="number" id="sDayStart" min="0" max="23" inputmode="numeric"></div>
@@ -818,7 +891,8 @@ const DemoStore = {
     D.records = D.records.filter(x => x.id !== r.id).concat([r]); this.save();
     return { record: r, replaced: existed };
   },
-  async remove(id) { const D = this.load(); D.records = D.records.filter(r => r.id !== id); this.save(); },
+  async remove(rec) { const id = rec.id || rec; const D = this.load(); D.records = D.records.filter(r => r.id !== id); this.save(); },
+  async listPlansFor(plant, from, to) { return this.listPlans(from, to); },
   async extract(imageDataUrl, isSample) {
     await new Promise(r => setTimeout(r, 1500));
     const d = sampleFormData();
@@ -827,22 +901,41 @@ const DemoStore = {
   },
 };
 
-function api(path, opts = {}) {
+async function api(path, opts = {}) {
   const base = (Settings.apiBase || '').replace(/\/+$/, '');
-  const headers = { 'Content-Type': 'application/json', ...(Settings.token ? { 'X-App-Token': Settings.token } : {}) };
-  return fetch(base + path, { ...opts, headers: { ...headers, ...(opts.headers || {}) } }).then(async res => {
-    const body = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(body.error || `Request failed (${res.status})`);
-    return body;
-  });
+  const headers = { 'Content-Type': 'application/json' };
+  if (AUTH.auth && AUTH.auth.currentUser) headers.Authorization = 'Bearer ' + await AUTH.auth.currentUser.getIdToken();
+  else if (Settings.token) headers['X-App-Token'] = Settings.token;
+  const res = await fetch(base + path, { ...opts, headers: { ...headers, ...(opts.headers || {}) } });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) { const e = new Error(body.error || `Request failed (${res.status})`); e.status = res.status; throw e; }
+  return body;
 }
+/* Plants in view: one plant, or every allowed plant for "All plants". In the all-plants view machines are
+   shown as "M1 · P9" so the same machine name in two plants stays apart. */
+const viewPlants = () => (S.plant === 'all' ? S.plants.map(p => p.code) : [S.plant]);
+const tagPlant = (x, code) => {
+  x.plant = code; x._id = x.id;
+  if (S.plant === 'all') { x.machine = `${code} · ${x.machine}`; x.id = recId(x); }
+  return x;
+};
 const LiveStore = {
-  async listPlans(from, to) { return (await api(`/api/plans?from=${from}&to=${to}`)).plans.map(normalizePlan); },
-  async listPlanMeta() { return (await api('/api/plan-meta')).metas; },
-  async savePlan(month, meta, entries) { return api('/api/plans', { method: 'POST', body: JSON.stringify({ month, meta, entries }) }); },
-  async list(from, to) { return (await api(`/api/records?from=${from}&to=${to}`)).records.map(normalizeRecord); },
+  async listPlans(from, to) {
+    const all = await Promise.all(viewPlants().map(async c => (await api(`/api/plans?plant=${c}&from=${from}&to=${to}`)).plans.map(normalizePlan).map(x => tagPlant(x, c))));
+    return all.flat();
+  },
+  async listPlansFor(plant, from, to) { return (await api(`/api/plans?plant=${plant}&from=${from}&to=${to}`)).plans.map(normalizePlan); },
+  async listPlanMeta() {
+    const all = await Promise.all(viewPlants().map(async c => (await api(`/api/plan-meta?plant=${c}`)).metas.map(m => ({ ...m, plant: c }))));
+    return all.flat().sort((a, b) => b.month.localeCompare(a.month) || a.plant.localeCompare(b.plant));
+  },
+  async savePlan(month, meta, entries, plant) { return api('/api/plans', { method: 'POST', body: JSON.stringify({ plant, month, meta, entries }) }); },
+  async list(from, to) {
+    const all = await Promise.all(viewPlants().map(async c => (await api(`/api/records?plant=${c}&from=${from}&to=${to}`)).records.map(normalizeRecord).map(x => tagPlant(x, c))));
+    return all.flat();
+  },
   async add(rec) { const out = await api('/api/records', { method: 'POST', body: JSON.stringify(rec) }); return { record: normalizeRecord(out.record), replaced: out.replaced }; },
-  async remove(id) { await api('/api/records/' + encodeURIComponent(id), { method: 'DELETE' }); },
+  async remove(rec) { await api(`/api/records/${encodeURIComponent(rec._id || rec.id)}?plant=${encodeURIComponent(rec.plant)}`, { method: 'DELETE' }); },
   async extract(imageDataUrl) {
     const [, mime, b64] = imageDataUrl.match(/^data:([^;]+);base64,(.*)$/) || [];
     return (await api('/api/extract', { method: 'POST', body: JSON.stringify({ mimeType: mime, imageBase64: b64, dayStart: Settings.dayStart, nightStart: Settings.nightStart }) })).data;
@@ -850,7 +943,8 @@ const LiveStore = {
 };
 
 /* ---------------- App state ---------------- */
-const S = { ready: false, live: false, health: null, records: [], plans: [], metas: [], scan: { image: null, isSample: false }, planImport: null };
+const AUTH = { enabled: false, auth: null, A: null };
+const S = { me: null, plants: [{ code: 'M1', name: 'M1' }], plant: 'M1', ready: false, live: false, health: null, records: [], plans: [], metas: [], scan: { image: null, isSample: false }, planImport: null };
 const Store = () => (S.live ? LiveStore : DemoStore);
 
 async function detectMode() {
@@ -883,6 +977,94 @@ async function detectMode() {
       ? 'Demo mode is switched on. Plans and records live only in this browser and extraction is simulated.'
       : 'No Worker found at this address, so the app runs on the September 2026 plan with simulated actuals, stored in this browser. Scans use simulated extraction.';
 }
+
+/* ---------------- Sign-in, plants and roles ---------------- */
+const FB_VER = '12.19.0';
+const role = () => S.me?.user?.role || 'admin';
+const PERMS = { scan: ['admin', 'planner', 'supervisor'], plan: ['admin', 'planner'], admin: ['admin'] };
+const can = perm => perm === 'view' || (PERMS[perm] || []).includes(role());
+function gate(state, msg = '') {
+  const g = $('#gate'); g.hidden = state === 'off';
+  $('#btnGoogle').hidden = state !== 'signin';
+  $('#btnGateOut').hidden = state !== 'denied';
+  $('#gateText').textContent = state === 'denied' ? 'This Google account does not have access yet.' : 'Sign in with your Google account to see plan vs actual for your plants.';
+  const m = $('#gateMsg'); m.textContent = msg; m.className = 'gate-msg' + (state === 'denied' || state === 'error' ? ' err' : '');
+}
+async function initAuth(cfg) {
+  gate('loading', 'Loading sign-in…');
+  const [{ initializeApp }, A] = await Promise.all([
+    import(`https://www.gstatic.com/firebasejs/${FB_VER}/firebase-app.js`),
+    import(`https://www.gstatic.com/firebasejs/${FB_VER}/firebase-auth.js`),
+  ]);
+  AUTH.A = A; AUTH.auth = A.getAuth(initializeApp(cfg));
+  try { await A.getRedirectResult(AUTH.auth); } catch (e) { /* shown below if sign-in still missing */ }
+  $('#btnGoogle').onclick = async () => {
+    const provider = new A.GoogleAuthProvider(); provider.setCustomParameters({ prompt: 'select_account' });
+    gate('loading', 'Opening Google…');
+    try { await A.signInWithPopup(AUTH.auth, provider); }
+    catch (e) {
+      if (/popup-blocked|operation-not-supported/.test(e.code || '')) return A.signInWithRedirect(AUTH.auth, provider);
+      gate('signin', /popup-closed|cancelled/.test(e.code || '') ? '' : 'Sign-in failed: ' + (e.message || e.code));
+    }
+  };
+  $('#btnGateOut').onclick = () => A.signOut(AUTH.auth);
+  return new Promise(resolve => {
+    let done = false;
+    A.onAuthStateChanged(AUTH.auth, async u => {
+      if (done) { if (!u) location.reload(); return; }
+      if (!u) { gate('signin'); return; }
+      gate('loading', `Signed in as ${u.email}. Checking access…`);
+      try { S.me = await api('/api/me'); done = true; gate('off'); resolve(); }
+      catch (e) { gate(e.status === 403 ? 'denied' : 'error', e.message); }
+    });
+  });
+}
+async function initIdentity() {
+  AUTH.enabled = !!(S.live && S.health && S.health.signIn);
+  if (AUTH.enabled) {
+    const cfg = (await api('/api/config')).auth;
+    await initAuth(cfg);
+  } else if (S.live) {
+    try { S.me = await api('/api/me'); } catch (e) { S.me = null; toast('Could not load your account: ' + e.message); }
+  } else {
+    S.me = { user: { email: 'demo', role: 'admin', plants: ['*'] }, plants: [{ code: 'M1', name: 'M1 (demo)' }] };
+  }
+  S.plants = (S.me && S.me.plants && S.me.plants.length) ? S.me.plants : [{ code: 'M1', name: 'M1' }];
+  const saved = store(SETTINGS_KEY + '.plant');
+  S.plant = saved === 'all' && S.plants.length > 1 ? 'all' : S.plants.some(p => p.code === saved) ? saved : S.plants[0].code;
+  renderPlantPicker(); applyRoleUI(); renderAccount();
+}
+const plantName = c => (c === 'all' ? 'All plants' : (S.plants.find(p => p.code === c)?.name || c));
+function plantOptions(sel, { all = false, value } = {}) {
+  sel.innerHTML = (all && S.plants.length > 1 ? '<option value="all">All plants</option>' : '') + S.plants.map(p => `<option value="${esc(p.code)}">${esc(p.code)}${p.name && p.name !== p.code ? ' · ' + esc(p.name) : ''}</option>`).join('');
+  if (value) sel.value = value;
+}
+function renderPlantPicker() {
+  $('#plantPick').hidden = S.plants.length < 2;
+  plantOptions($('#hPlant'), { all: true, value: S.plant });
+  const one = S.plant === 'all' ? S.plants[0].code : S.plant;
+  plantOptions($('#planPlant'), { value: one }); plantOptions($('#dPlant'), { value: one }); plantOptions($('#migPlant'), { value: one });
+  $('#brandSub').textContent = `${S.plant === 'all' ? 'All plants' : S.plant} · FR-PROD-001 · Plan vs Actual`;
+}
+function applyRoleUI() {
+  $('#tab-scan').hidden = !can('scan');
+  document.body.classList.toggle('no-scan', !can('scan'));
+  $('#planUploadRow').hidden = !can('plan');
+  $('#accountGrid').hidden = !S.live;
+  $('#plantsAdmin').hidden = !can('admin');
+  $('#usersAdmin').hidden = !(can('admin') && AUTH.enabled);
+  $('#sTokenField').hidden = AUTH.enabled;
+  const chip = $('#userChip'), u = AUTH.auth?.currentUser;
+  chip.hidden = !u;
+  if (u) chip.innerHTML = (u.photoURL ? `<img src="${esc(u.photoURL)}" alt="" referrerpolicy="no-referrer">` : `<b class="ini">${esc((u.displayName || u.email || '?').slice(0, 1).toUpperCase())}</b>`) + `<span>${esc(u.displayName || u.email)}</span>`;
+}
+$('#userChip').addEventListener('click', () => showView('settings'));
+$('#hPlant').addEventListener('change', async () => {
+  S.plant = $('#hPlant').value; store(SETTINGS_KEY + '.plant', S.plant); renderPlantPicker();
+  try { S.metas = await Store().listPlanMeta(); } catch (e) { S.metas = []; }
+  $('#fMachine').value = 'all'; $('#fModel').value = 'all';
+  setMonth(curMonth(), asOf()); await refresh();
+});
 
 /* ---------------- Filters ---------------- */
 const curMonth = () => $('#fMonth').value;
@@ -1161,6 +1343,7 @@ function renderDashboard() {
 
   renderHourly();
   renderMachineTable(plans, recs, t);
+  renderPlantTable(plans, recs, t);
   S.dash = { ym, from, t, plans, recs, days, monthPlan, planMtd, actualMtd, reject, downtime, planned, daysMet, pend, day, balance, daysLeft };
   renderAiSummary();
 }
@@ -1212,6 +1395,11 @@ function summaryStats() {
 
   return {
     month: D.ym, asOf: t, today: today(),
+    plant: S.plant === 'all' ? `All plants (${S.plants.map(p => p.code).join(', ')}); machine names are prefixed with the plant code` : `${S.plant}${plantName(S.plant) !== S.plant ? ' · ' + plantName(S.plant) : ''}`,
+    ...(S.plant === 'all' ? { byPlant: S.plants.map(pl => {
+      const pt = plansTd.filter(p => p.plant === pl.code).reduce((s, p) => s + p.qty, 0), at = recsTd.filter(r => r.plant === pl.code).reduce((s, r) => s + r.totalActual, 0);
+      return { plant: pl.code, planToDate: pt, actual: at, pct: pc(at, pt), pcsMissing: D.pend.filter(x => x.plant === pl.code).length };
+    }) } : {}),
     filters: { machine: $('#fMachine').value, model: $('#fModel').value, shift: $('#fShift').value },
     monthToDate: { monthPlan: D.monthPlan, planToDate: D.planMtd, actualToDate: D.actualMtd, achievementPct: pc(D.actualMtd, D.planMtd), gapPcs: D.actualMtd - D.planMtd,
       daysOnTarget: D.daysMet, plannedDaysToDate: D.planned.length, pcsScanned: recsTd.length },
@@ -1233,7 +1421,7 @@ function summaryStats() {
     topRemarks: [...remarks.entries()].sort((a, b) => b[1] - a[1]).slice(0, 10).map(([text, times]) => ({ text, times })),
   };
 }
-const aiKey = () => S.dash ? JSON.stringify([S.live, $('#aiLang').value, S.dash.ym, S.dash.t, $('#fMachine').value, $('#fModel').value, $('#fShift').value, S.dash.planMtd, S.dash.actualMtd, S.dash.recs.length]) : '';
+const aiKey = () => S.dash ? JSON.stringify([S.live, S.plant, $('#aiLang').value, S.dash.ym, S.dash.t, $('#fMachine').value, $('#fModel').value, $('#fShift').value, S.dash.planMtd, S.dash.actualMtd, S.dash.recs.length]) : '';
 function aiCache(k, v) {
   S.ai = S.ai || {};
   if (v === undefined) { if (S.ai[k]) return S.ai[k]; const all = store('pcs.ai.v2') || {}; return all[k] || null; }
@@ -1359,6 +1547,22 @@ function renderHourly() {
     }).join('') || `<tr><td colspan="8" class="empty">No plan or PCS for ${date ? dowDate(date) : 'this date'}.</td></tr>`}</tbody>`;
 }
 
+function renderPlantTable(plans, recs, t) {
+  const panel = $('#plantPanel'); panel.hidden = S.plant !== 'all';
+  if (panel.hidden) return;
+  const pend = pendingPcs(plans, recs, t);
+  const rows = S.plants.map(pl => {
+    const ps = plans.filter(p => p.plant === pl.code), rs = recs.filter(r => r.plant === pl.code && r.date <= t);
+    const planAll = ps.reduce((s, p) => s + p.qty, 0), plan = ps.filter(p => p.date <= t).reduce((s, p) => s + p.qty, 0);
+    const actual = rs.reduce((s, r) => s + r.totalActual, 0), reject = rs.reduce((s, r) => s + r.totalReject, 0);
+    return { ...pl, planAll, plan, actual, reject, pend: pend.filter(x => x.plant === pl.code).length };
+  });
+  $('#plantHint').textContent = `${rows.length} plants · accumulated 1st – ${shortDate(t)}`;
+  $('#tblPlants').innerHTML = `<thead><tr><th>Plant</th><th class="r">Month plan</th><th class="r">Plan to date</th><th class="r">Actual to date</th><th class="r">Variance</th><th class="r">Reject</th><th class="r">PCS missing</th><th class="r">Achievement</th></tr></thead>
+    <tbody>${rows.map(x => `<tr data-plant="${esc(x.code)}" style="cursor:pointer"><td><span class="plant-tag">${esc(x.code)}</span> ${x.name && x.name !== x.code ? esc(x.name) : ''}</td><td class="r num">${fmt(x.planAll)}</td><td class="r num">${fmt(x.plan)}</td><td class="r num">${fmt(x.actual)}</td><td class="r num">${deltaSpan(x.actual - x.plan)}</td><td class="r num">${fmt(x.reject)}</td><td class="r num">${x.pend ? `<span class="status warn"><i>▲</i>${x.pend}</span>` : '—'}</td><td class="r">${x.plan ? `<div class="bar-cell"><span class="mini"><i style="width:${Math.min(100, pct(x.actual, x.plan))}%"></i></span>${statusPill(pct(x.actual, x.plan))}</div>` : '<span class="muted">No plan to date</span>'}</td></tr>`).join('')}</tbody>`;
+}
+$('#tblPlants').addEventListener('click', e => { const tr = e.target.closest('tr[data-plant]'); if (tr) { $('#hPlant').value = tr.dataset.plant; $('#hPlant').dispatchEvent(new Event('change')); } });
+
 function renderMachineTable(plans, recs, t) {
   const pend = new Set(pendingPcs(plans, recs, t).map(p => p.id));
   const m = new Map();
@@ -1440,16 +1644,17 @@ $('#btnSavePlan').addEventListener('click', async () => {
   const btn = $('#btnSavePlan'); btn.disabled = true;
   try {
     const meta = { sheet: P.sheet, title: P.info.title, revision: P.info.revision, docNo: P.info.docNo, issued: P.info.issued, fileName: planFileName };
-    const res = await Store().savePlan(P.month, meta, P.entries.filter(e => e.date.startsWith(P.month)));
-    toast(`Saved ${res.saved} plan entries for ${monthLabel(P.month)}`);
+    const plant = $('#planPlant').value;
+    const res = await Store().savePlan(P.month, meta, P.entries.filter(e => e.date.startsWith(P.month)), plant);
+    toast(`Saved ${res.saved} plan entries for ${monthLabel(P.month)} · ${plant}`);
     S.metas = await Store().listPlanMeta(); setMonth(P.month);
     await refresh(); renderPlanMeta();
   } catch (e) { toast('Save failed: ' + e.message); }
   finally { btn.disabled = false; }
 });
 function renderPlanMeta() {
-  $('#tblPlanMeta').innerHTML = `<thead><tr><th>Month</th><th>Sheet</th><th>Revision</th><th class="r">Runs</th><th class="r">Total plan</th><th>File</th><th>Imported</th><th></th></tr></thead>
-    <tbody>${S.metas.map(m => `<tr><td><b>${monthLabel(m.month)}</b></td><td>${esc(m.sheet)}</td><td>${esc(m.revision)}</td><td class="r num">${fmt(m.entries)}</td><td class="r num">${fmt(m.total)}</td><td style="white-space:normal">${esc(m.fileName)}</td><td>${m.importedAt ? new Date(m.importedAt).toLocaleDateString('en-MY') : ''}</td><td class="r"><button class="btn small" data-month="${esc(m.month)}">View on dashboard</button></td></tr>`).join('') || '<tr><td colspan="8" class="empty">No plan imported yet.</td></tr>'}</tbody>`;
+  $('#tblPlanMeta').innerHTML = `<thead><tr><th>Month</th><th>Plant</th><th>Sheet</th><th>Revision</th><th class="r">Runs</th><th class="r">Total plan</th><th>File</th><th>Imported</th><th></th></tr></thead>
+    <tbody>${S.metas.map(m => `<tr><td><b>${monthLabel(m.month)}</b></td><td><span class="plant-tag">${esc(m.plant || S.plant)}</span></td><td>${esc(m.sheet)}</td><td>${esc(m.revision)}</td><td class="r num">${fmt(m.entries)}</td><td class="r num">${fmt(m.total)}</td><td style="white-space:normal">${esc(m.fileName)}</td><td>${m.importedAt ? new Date(m.importedAt).toLocaleDateString('en-MY') : ''}</td><td class="r"><button class="btn small" data-month="${esc(m.month)}">View on dashboard</button></td></tr>`).join('') || '<tr><td colspan="9" class="empty">No plan imported yet.</td></tr>'}</tbody>`;
 }
 $('#tblPlanMeta').addEventListener('click', async e => {
   const b = e.target.closest('[data-month]'); if (!b) return;
@@ -1477,7 +1682,7 @@ $('#tblRecords').addEventListener('click', async ev => {
     tr.after(d);
   } else if (b.dataset.act === 'del') {
     if (!b.dataset.armed) { b.dataset.armed = '1'; b.textContent = 'Confirm delete'; setTimeout(() => { if (b.isConnected) { delete b.dataset.armed; b.textContent = 'Delete'; } }, 3000); return; }
-    try { await Store().remove(id); toast('Record deleted'); await refresh(); } catch (e) { toast('Delete failed: ' + e.message); }
+    try { await Store().remove(rec); toast('Record deleted'); await refresh(); } catch (e) { toast('Delete failed: ' + e.message); }
   }
 });
 
@@ -1520,8 +1725,8 @@ $('#btnExtract').addEventListener('click', async () => {
 /** Find the plan entry for the draft's date/shift/machine/model (loose match on names). */
 async function findPlan(date, shift, machine, model) {
   if (!date) return null;
-  let pool = S.plans.filter(p => p.date === date);
-  if (!pool.length) { try { pool = await Store().listPlans(date, date); } catch (e) { pool = []; } }
+  let pool = [];
+  try { pool = await Store().listPlansFor($('#dPlant').value, date, date); } catch (e) { pool = []; }
   const km = key(machine), kmo = key(model);
   const same = pool.filter(p => p.shift === shift && key(p.machine) === km);
   return same.find(p => key(p.model) === kmo) || same.find(p => kmo && (key(p.model).includes(kmo) || kmo.includes(key(p.model)))) || null;
@@ -1554,7 +1759,7 @@ function fillHourlyPlan() {
   updateTotals();
 }
 $('#planMatch').addEventListener('click', e => { if (e.target.id === 'btnFillPlan') fillHourlyPlan(); });
-['#dDate', '#dShift', '#dMachine', '#dModel'].forEach(id => $(id).addEventListener('change', () => updatePlanMatch(false)));
+['#dPlant', '#dDate', '#dShift', '#dMachine', '#dModel'].forEach(id => $(id).addEventListener('change', () => updatePlanMatch(false)));
 
 function fillDraft(d) {
   $('#reviewEmpty').hidden = true; $('#reviewBody').hidden = false;
@@ -1612,6 +1817,7 @@ $('#btnSave').addEventListener('click', async () => {
   if (!$('#dMachine').value.trim() || !$('#dModel').value.trim()) { toast('Fill in the machine and model before saving.'); return; }
   if (!hourly.length) { toast('Add at least one hour row.'); return; }
   const rec = {
+    plant: $('#dPlant').value,
     date: $('#dDate').value, shift: $('#dShift').value, machine: draftPlan ? draftPlan.machine : $('#dMachine').value.trim(),
     model: draftPlan ? draftPlan.model : $('#dModel').value.trim(), operator: $('#dOperator').value, supervisor: $('#dSupervisor').value,
     downtimeMin: +$('#dDowntime').value || 0, planQty: draftPlan ? draftPlan.qty : 0, hourly, source: S.scan.image ? 'scan' : 'manual',
@@ -1625,7 +1831,8 @@ $('#btnSave').addEventListener('click', async () => {
     setMonth(r.date.slice(0, 7), r.date);
     $('#fMachine').value = 'all'; $('#fModel').value = 'all';
     await refresh();
-    $('#fMachine').value = r.machine; fillModelOptions(); $('#fModel').value = r.model;
+    const shown = S.plant === 'all' ? `${rec.plant} · ${r.machine}` : r.machine;
+    if ([...$('#fMachine').options].some(o => o.value === shown)) { $('#fMachine').value = shown; fillModelOptions(); $('#fModel').value = r.model; renderDashboard(); }
     showView('dashboard');
   } catch (e) { toast('Save failed: ' + e.message); }
   finally { btn.disabled = false; }
@@ -1643,6 +1850,65 @@ $('#btnSaveSettings').addEventListener('click', async () => {
   toast(S.live ? 'Connected to Worker' : 'Running in demo mode');
 });
 $('#btnResetDemo').addEventListener('click', async () => { DemoStore.reset(); if (!S.live) await refresh(); toast('Demo data reset'); });
+
+/* ---------------- Account and admin ---------------- */
+function renderAccount() {
+  if (!S.me) return;
+  const u = S.me.user;
+  $('#accRole').textContent = u.role;
+  $('#accInfo').innerHTML = `<span>Signed in as <b>${esc(AUTH.auth?.currentUser?.email || u.email)}</b></span><span>Plants <b>${u.plants.includes('*') ? 'all' : u.plants.map(esc).join(', ')}</b></span>`;
+  $('#btnSignOut').hidden = !AUTH.enabled;
+  if (can('admin')) { renderPlantRows(S.me.plants); if (AUTH.enabled) loadUsers(); }
+}
+$('#btnSignOut').addEventListener('click', () => AUTH.A && AUTH.A.signOut(AUTH.auth));
+function renderPlantRows(list) {
+  $('#plantRows').innerHTML = list.map(p => `<div class="row"><input type="text" class="pcode" value="${esc(p.code)}" aria-label="Plant code" placeholder="M1"><input type="text" class="pname" value="${esc(p.name || '')}" aria-label="Plant name" placeholder="Plant name"><button class="btn small ghost danger" data-rm aria-label="Remove plant">✕</button></div>`).join('');
+}
+$('#plantRows').addEventListener('click', e => { if (e.target.closest('[data-rm]')) e.target.closest('.row').remove(); });
+$('#btnAddPlant').addEventListener('click', () => $('#plantRows').insertAdjacentHTML('beforeend', '<div class="row"><input type="text" class="pcode" aria-label="Plant code" placeholder="M6"><input type="text" class="pname" aria-label="Plant name" placeholder="Plant name"><button class="btn small ghost danger" data-rm aria-label="Remove plant">✕</button></div>'));
+$('#btnSavePlants').addEventListener('click', async () => {
+  const plants = $$('#plantRows .row').map(r => ({ code: $('.pcode', r).value.trim(), name: $('.pname', r).value.trim() })).filter(p => p.code);
+  try {
+    await api('/api/plants', { method: 'PUT', body: JSON.stringify({ plants }) });
+    S.me = await api('/api/me'); S.plants = S.me.plants;
+    if (S.plant !== 'all' && !S.plants.some(p => p.code === S.plant)) S.plant = S.plants[0].code;
+    renderPlantPicker(); renderAccount(); toast('Plants saved'); await refresh();
+  } catch (e) { toast('Could not save plants: ' + e.message); }
+});
+$('#btnMigrate').addEventListener('click', async e => {
+  const b = e.currentTarget, plant = $('#migPlant').value;
+  if (!b.dataset.armed) { b.dataset.armed = '1'; b.textContent = `Confirm: move into ${plant}`; setTimeout(() => { delete b.dataset.armed; b.textContent = 'Move it into this plant'; }, 4000); return; }
+  delete b.dataset.armed; b.textContent = 'Move it into this plant';
+  try { const r = await api('/api/admin/migrate', { method: 'POST', body: JSON.stringify({ plant }) }); const m = r.moved;
+    toast(`Moved into ${plant}: ${m.pcs_records} records, ${m.pcs_plans} plan entries, ${m.pcs_plan_meta} plan months`); S.metas = await Store().listPlanMeta(); await refresh(); }
+  catch (err) { toast('Move failed: ' + err.message); }
+});
+let usersCache = [];
+function userPlantsBoxes(sel = []) {
+  $('#uPlants').innerHTML = `<label><input type="checkbox" value="*" ${sel.includes('*') ? 'checked' : ''}> All plants</label>` + S.me.plants.map(p => `<label><input type="checkbox" value="${esc(p.code)}" ${sel.includes(p.code) ? 'checked' : ''}> ${esc(p.code)}</label>`).join('');
+}
+async function loadUsers() {
+  try { const r = await api('/api/users'); usersCache = r.users;
+    const admins = r.adminEmails.map(e => `<tr><td>${esc(e)}</td><td></td><td><span class="role-tag">admin</span></td><td>all</td><td class="muted">Set in Cloudflare (ADMIN_EMAILS)</td></tr>`).join('');
+    $('#tblUsers').innerHTML = `<thead><tr><th>Email</th><th>Name</th><th>Role</th><th>Plants</th><th></th></tr></thead><tbody>${admins}${usersCache.map(u => `<tr data-email="${esc(u.email)}"><td>${esc(u.email)}</td><td>${esc(u.name || '')}</td><td><span class="role-tag">${esc(u.role)}</span></td><td>${u.plants.includes('*') ? 'all' : u.plants.map(esc).join(', ')}</td><td class="r"><button class="btn small ghost" data-act="edit">Edit</button><button class="btn small ghost danger" data-act="del">Remove</button></td></tr>`).join('') || (admins ? '' : '<tr><td colspan="5" class="empty">No users yet.</td></tr>')}</tbody>`;
+  } catch (e) { $('#tblUsers').innerHTML = `<tbody><tr><td class="empty">Could not load users: ${esc(e.message)}</td></tr></tbody>`; }
+  if (!$('#uPlants').children.length) userPlantsBoxes();
+}
+$('#tblUsers').addEventListener('click', async e => {
+  const b = e.target.closest('button'); if (!b) return;
+  const email = b.closest('tr').dataset.email, u = usersCache.find(x => x.email === email);
+  if (b.dataset.act === 'edit') { $('#uEmail').value = u.email; $('#uName').value = u.name || ''; $('#uRole').value = u.role; userPlantsBoxes(u.plants); $('#uEmail').focus(); return; }
+  if (!b.dataset.armed) { b.dataset.armed = '1'; b.textContent = 'Confirm remove'; setTimeout(() => { if (b.isConnected) { delete b.dataset.armed; b.textContent = 'Remove'; } }, 3000); return; }
+  try { await api('/api/users/' + encodeURIComponent(email), { method: 'DELETE' }); toast(`${email} removed`); loadUsers(); } catch (err) { toast('Remove failed: ' + err.message); }
+});
+$('#btnUserClear').addEventListener('click', () => { $('#uEmail').value = ''; $('#uName').value = ''; $('#uRole').value = 'supervisor'; userPlantsBoxes(); });
+$('#btnUserSave').addEventListener('click', async () => {
+  const plants = $$('#uPlants input:checked').map(i => i.value);
+  try {
+    const r = await api('/api/users', { method: 'PUT', body: JSON.stringify({ email: $('#uEmail').value.trim(), name: $('#uName').value.trim(), role: $('#uRole').value, plants }) });
+    toast(`${r.user.email} saved as ${r.user.role}`); $('#btnUserClear').click(); loadUsers();
+  } catch (e) { toast('Could not save user: ' + e.message); }
+});
 
 /* ---------------- Navigation & boot ---------------- */
 function showView(v) {
@@ -1669,6 +1935,7 @@ let rz; window.addEventListener('resize', () => { clearTimeout(rz); rz = setTime
 
 (async function boot() {
   await detectMode();
+  await initIdentity();
   try { S.metas = await Store().listPlanMeta(); } catch (e) { S.metas = []; }
   // Current month if it has a plan, else the latest imported plan month.
   const t = today().slice(0, 7), planMonths = S.metas.map(m => m.month).sort();

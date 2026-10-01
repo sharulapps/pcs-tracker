@@ -13,6 +13,15 @@ binding = "ASSETS"
 GEMINI_MODEL = "gemini-3.6-flash"
 # Used when the main model is busy or over quota. "" turns it off.
 GEMINI_FALLBACK_MODEL = "gemini-3.5-flash-lite"
+# Starting plant list; an admin can rename or add plants in Settings → Plants.
+PLANTS = "M1,M2,M3,M4,M5"
+
+# Set these in the Cloudflare dashboard (Settings → Variables and Secrets), not here,
+# so a deploy never overwrites them:
+#   FIREBASE_WEB_API_KEY   Firebase web app apiKey; setting it turns on Google sign-in
+#   FIREBASE_APP_ID        Firebase web app appId (optional)
+#   FIREBASE_AUTH_DOMAIN   optional, default <project>.firebaseapp.com
+#   ADMIN_EMAILS           Google accounts that are always admin, comma separated
 ALLOWED_ORIGIN = "*"
 
 # Secrets (do not put these in this file):

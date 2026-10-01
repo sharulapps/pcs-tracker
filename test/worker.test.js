@@ -1,13 +1,23 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { generateKeyPairSync } from 'node:crypto';
-import worker, { toFs, fromFs, sanitizeRecord, sanitizePlanEntry, normalizePcsForm, to24h, geminiKeys, geminiModels, geminiFailure } from '../worker/index.js';
+import { generateKeyPairSync, createSign } from 'node:crypto';
+import worker, { toFs, fromFs, sanitizeRecord, sanitizePlanEntry, normalizePcsForm, to24h, geminiKeys, geminiModels, geminiFailure, verifyIdToken } from '../worker/index.js';
 
 const { privateKey } = generateKeyPairSync('rsa', { modulusLength: 2048 });
+const idKeys = generateKeyPairSync('rsa', { modulusLength: 2048 });
+const JWK_URL = 'https://www.googleapis.com/service_accounts/v1/jwk/securetoken@system.gserviceaccount.com';
+const jwk = { ...idKeys.publicKey.export({ format: 'jwk' }), kid: 'k1', alg: 'RS256', use: 'sig' };
+const b64u = b => Buffer.from(b).toString('base64url');
+function idToken(claims, { key = idKeys.privateKey, kid = 'k1' } = {}) {
+  const now = Math.floor(Date.now() / 1000);
+  const body = { iss: 'https://securetoken.google.com/demo-proj', aud: 'demo-proj', sub: 'uid-' + (claims.email || 'x'), iat: now, exp: now + 3600, auth_time: now, email_verified: true, ...claims };
+  const head = b64u(JSON.stringify({ alg: 'RS256', kid })) + '.' + b64u(JSON.stringify(body));
+  return head + '.' + createSign('RSA-SHA256').update(head).sign(key).toString('base64url');
+}
 const pem = privateKey.export({ type: 'pkcs8', format: 'pem' }).replace(/\n/g, '\\n');
 const env = {
   GEMINI_API_KEY: 'g-key', FIREBASE_PROJECT_ID: 'demo-proj', FIREBASE_CLIENT_EMAIL: 'svc@demo.iam',
-  FIREBASE_PRIVATE_KEY: pem, APP_TOKEN: 'secret',
+  FIREBASE_PRIVATE_KEY: pem, APP_TOKEN: 'secret', PLANTS: 'M1,M2',
 };
 const docs = new Map();
 const calls = [];
@@ -34,30 +44,35 @@ globalThis.fetch = async (url, init = {}) => {
     const form = { station: 'P11 SAGA MC3 HI', dateText: '30.9.2026', shift: 'DAY', rows: [{ from: '8', to: '9', plan: 22, planCum: 22, actual: 20, actualCum: 20 }], confidence: 0.9, warnings: [] };
     return reply({ candidates: [{ content: { parts: [{ text: JSON.stringify(form) }] } }] });
   }
+  if (url === JWK_URL) return new Response(JSON.stringify({ keys: [jwk] }), { headers: { 'cache-control': 'max-age=3600' } });
   const base = 'https://firestore.googleapis.com/v1/projects/demo-proj/databases/(default)/documents';
   assert.equal(init.headers.Authorization, 'Bearer tok');
-  const path = url.startsWith(base + '/') ? url.slice(base.length + 1).split('?')[0] : null;
-  if (path && init.method === 'PATCH') {
-    const doc = { name: `projects/demo-proj/databases/(default)/documents/${path}`, fields: JSON.parse(init.body).fields };
-    docs.set(path, doc); return reply(doc);
-  }
-  if (path && init.method === 'DELETE') { docs.delete(path); return reply({}); }
-  if (path && !path.includes('/')) return reply({ documents: [...docs.entries()].filter(([k]) => k.startsWith(path + '/')).map(([, d]) => d) });
-  if (path) return docs.has(path) ? reply(docs.get(path)) : reply({ error: { message: 'not found' } }, 404);
-  if (url === base + ':runQuery') {
+  if (!url.startsWith(base)) return reply({ error: { message: 'unexpected ' + url } }, 500);
+  const rest = url.slice(base.length);
+  const children = prefix => [...docs.entries()].filter(([k]) => k.startsWith(prefix) && !k.slice(prefix.length).includes('/'));
+  if (rest.endsWith(':runQuery')) {
+    const parent = rest.slice(1, -':runQuery'.length);
     const q = JSON.parse(init.body).structuredQuery, coll = q.from[0].collectionId;
     const f = q.where.fieldFilter;
-    return reply([...docs.entries()].filter(([k]) => k.startsWith(coll + '/'))
+    return reply(children((parent ? parent + '/' : '') + coll + '/')
       .filter(([, d]) => !f || d.fields[f.field.fieldPath].stringValue === f.value.stringValue)
       .map(([, document]) => ({ document })));
   }
-  if (url === base + ':batchWrite') {
+  if (rest === ':batchWrite') {
     for (const w of JSON.parse(init.body).writes) {
       if (w.delete) docs.delete(w.delete.split('/documents/')[1]);
       else docs.set(w.update.name.split('/documents/')[1], w.update);
     }
     return reply({});
   }
+  const path = decodeURIComponent(rest.slice(1).split('?')[0]);
+  if (init.method === 'PATCH') {
+    const doc = { name: `projects/demo-proj/databases/(default)/documents/${path}`, fields: JSON.parse(init.body).fields };
+    docs.set(path, doc); return reply(doc);
+  }
+  if (init.method === 'DELETE') { docs.delete(path); return reply({}); }
+  if (path.split('/').length % 2 === 1) return reply({ documents: children(path + '/').map(([, d]) => d) });
+  return docs.has(path) ? reply(docs.get(path)) : reply({ error: { message: 'not found' } }, 404);
   return reply({ error: { message: 'unexpected ' + url } }, 500);
 };
 const call = (path, init = {}) => worker.fetch(new Request('https://x.test' + path, {
@@ -87,29 +102,32 @@ test('health is open, other routes need the token', async () => {
 test('extract, save (upsert), list, delete', async () => {
   const ex = await (await call('/api/extract', { method: 'POST', body: JSON.stringify({ mimeType: 'image/jpeg', imageBase64: 'AAAA' }) })).json();
   assert.equal(ex.data.machine, 'P11');
-  const saved = await call('/api/records', { method: 'POST', body: JSON.stringify({ ...ex.data, source: 'scan' }) });
+  const saved = await call('/api/records', { method: 'POST', body: JSON.stringify({ ...ex.data, plant: 'M1', source: 'scan' }) });
   assert.equal(saved.status, 201);
   const { record, replaced } = await saved.json();
   assert.equal(record.id, '2026-09-30-day-p11-saga-mc3-hi'); assert.equal(replaced, false);
   assert.equal(record.totalActual, 20); assert.equal(record.hourly[0].plan, 22);
-  const again = await (await call('/api/records', { method: 'POST', body: JSON.stringify({ ...ex.data, hourly: [{ slot: '08:00-09:00', plan: 22, actual: 21 }] }) })).json();
+  const again = await (await call('/api/records', { method: 'POST', body: JSON.stringify({ ...ex.data, plant: 'M1', hourly: [{ slot: '08:00-09:00', plan: 22, actual: 21 }] }) })).json();
   assert.equal(again.replaced, true); assert.equal(again.record.totalActual, 21);
-  const list = await (await call('/api/records?from=2026-09-01&to=2026-09-30')).json();
+  const list = await (await call('/api/records?plant=M1&from=2026-09-01&to=2026-09-30')).json();
   assert.equal(list.records.length, 1); assert.equal(list.records[0].id, record.id);
-  const del = await call('/api/records/' + record.id, { method: 'DELETE' });
-  assert.equal(del.status, 200); assert.equal(docs.size, 0);
+  assert.ok(docs.has('plants/M1/pcs_records/' + record.id));
+  const other = await (await call('/api/records?plant=M2&from=2026-09-01&to=2026-09-30')).json();
+  assert.equal(other.records.length, 0, 'plants are kept apart');
+  const del = await call('/api/records/' + record.id + '?plant=M1', { method: 'DELETE' });
+  assert.equal(del.status, 200); assert.ok(!docs.has('plants/M1/pcs_records/' + record.id));
   assert.equal(calls.filter(u => u.includes('oauth2')).length, 1, 'token is cached');
 });
 
 test('plan import replaces the month', async () => {
   const e = (date, shift, qty, model = 'SAGA MC3 HI') => ({ date, shift, machine: 'P11', model, ratePerHour: 22, qty });
-  let r = await (await call('/api/plans', { method: 'POST', body: JSON.stringify({ month: '2026-09', meta: { sheet: 'SEPTEMBER REV 0', revision: '0' }, entries: [e('2026-09-01', 'Day', 120), e('2026-09-01', 'Night', 200), e('2026-09-02', 'Day', 50, 'OLD')] }) })).json();
+  let r = await (await call('/api/plans', { method: 'POST', body: JSON.stringify({ plant: 'M1', month: '2026-09', meta: { sheet: 'SEPTEMBER REV 0', revision: '0' }, entries: [e('2026-09-01', 'Day', 120), e('2026-09-01', 'Night', 200), e('2026-09-02', 'Day', 50, 'OLD')] }) })).json();
   assert.equal(r.saved, 3);
-  r = await (await call('/api/plans', { method: 'POST', body: JSON.stringify({ month: '2026-09', meta: { sheet: 'SEPTEMBER REV 1', revision: '1' }, entries: [e('2026-09-01', 'Day', 130), e('2026-09-01', 'Night', 200), e('2026-10-01', 'Day', 9)] }) })).json();
+  r = await (await call('/api/plans', { method: 'POST', body: JSON.stringify({ plant: 'M1', month: '2026-09', meta: { sheet: 'SEPTEMBER REV 1', revision: '1' }, entries: [e('2026-09-01', 'Day', 130), e('2026-09-01', 'Night', 200), e('2026-10-01', 'Day', 9)] }) })).json();
   assert.equal(r.saved, 2); assert.equal(r.removed, 1);
-  const { plans } = await (await call('/api/plans?from=2026-09-01&to=2026-09-30')).json();
+  const { plans } = await (await call('/api/plans?plant=M1&from=2026-09-01&to=2026-09-30')).json();
   assert.deepEqual(plans.map(p => [p.shift, p.qty]).sort(), [['Day', 130], ['Night', 200]]);
-  const { metas } = await (await call('/api/plan-meta')).json();
+  const { metas } = await (await call('/api/plan-meta?plant=M1')).json();
   assert.equal(metas.length, 1); assert.equal(metas[0].revision, '1'); assert.equal(metas[0].total, 330);
 });
 
@@ -210,4 +228,57 @@ test('summary endpoint returns a cleaned summary', async () => {
   assert.deepEqual(summary.actions, [{ priority: 'high', text: 'Semak P11.' }, { priority: 'medium', text: 'Kumpul PCS.' }]);
   const bad = await call('/api/summary', { method: 'POST', body: JSON.stringify({}) });
   assert.equal(bad.status, 400);
+});
+
+test('Google sign-in: token check, users, roles and plants', async () => {
+  const live = { ...env, APP_TOKEN: undefined, FIREBASE_WEB_API_KEY: 'web-key', ADMIN_EMAILS: 'boss@x.my' };
+  const as = (tok, path, init = {}) => worker.fetch(new Request('https://x.test' + path, { ...init,
+    headers: { 'Content-Type': 'application/json', ...(tok ? { Authorization: 'Bearer ' + tok } : {}) } }), live);
+
+  const cfg = await (await as(null, '/api/config')).json();
+  assert.equal(cfg.auth.apiKey, 'web-key'); assert.equal(cfg.auth.authDomain, 'demo-proj.firebaseapp.com');
+  assert.equal((await as(null, '/api/me')).status, 401);
+
+  // bad tokens
+  const wrongKey = generateKeyPairSync('rsa', { modulusLength: 2048 }).privateKey;
+  assert.equal((await as(idToken({ email: 'boss@x.my' }, { key: wrongKey }), '/api/me')).status, 401);
+  assert.equal((await as(idToken({ email: 'boss@x.my', aud: 'other' }), '/api/me')).status, 401);
+  assert.equal((await as(idToken({ email: 'boss@x.my', exp: 1 }), '/api/me')).status, 401);
+  await assert.rejects(verifyIdToken(live, idToken({ email: 'boss@x.my', email_verified: false })), /verified/);
+
+  // admin from ADMIN_EMAILS sees all plants and manages users/plants
+  const boss = idToken({ email: 'Boss@X.my', name: 'Boss' });
+  const me = await (await as(boss, '/api/me')).json();
+  assert.equal(me.user.role, 'admin'); assert.deepEqual(me.plants.map(p => p.code), ['M1', 'M2']);
+  const pl = await as(boss, '/api/plants', { method: 'PUT', body: JSON.stringify({ plants: [1, 2, 3, 4, 5].map(i => ({ code: 'm' + i, name: 'Plant ' + i })) }) });
+  assert.deepEqual((await pl.json()).plants.map(p => p.code), ['M1', 'M2', 'M3', 'M4', 'M5']);
+
+  // unknown Google account is refused until added
+  const sup = idToken({ email: 'sup@x.my' });
+  const denied = await as(sup, '/api/me');
+  assert.equal(denied.status, 403); assert.match((await denied.json()).error, /not been given access/);
+  assert.equal((await as(boss, '/api/users', { method: 'PUT', body: JSON.stringify({ email: 'SUP@x.my', role: 'supervisor', plants: ['M2', 'M9'] }) })).status, 200);
+  const sme = await (await as(sup, '/api/me')).json();
+  assert.equal(sme.user.role, 'supervisor'); assert.deepEqual(sme.plants.map(p => p.code), ['M2']);
+
+  // supervisor: scan own plant only, no plan upload, no admin
+  const rec = { plant: 'M2', date: '2026-10-01', shift: 'Day', machine: 'P9', model: 'X', hourly: [{ slot: '08:00-09:00', plan: 10, actual: 9 }] };
+  const ok = await as(sup, '/api/records', { method: 'POST', body: JSON.stringify(rec) });
+  assert.equal(ok.status, 201); assert.equal((await ok.json()).record.savedBy, 'sup@x.my');
+  assert.equal((await as(sup, '/api/records', { method: 'POST', body: JSON.stringify({ ...rec, plant: 'M1' }) })).status, 403);
+  assert.equal((await as(sup, '/api/records?plant=M1')).status, 403);
+  assert.equal((await as(sup, '/api/plans', { method: 'POST', body: JSON.stringify({ plant: 'M2', month: '2026-10', entries: [] }) })).status, 403);
+  assert.equal((await as(sup, '/api/users')).status, 403);
+  assert.equal((await as(sup, '/api/records?plant=M7')).status, 400, 'unknown plant');
+
+  // admin removes the user
+  assert.equal((await as(boss, '/api/users/' + encodeURIComponent('sup@x.my'), { method: 'DELETE' })).status, 200);
+  assert.equal((await as(sup, '/api/me')).status, 403);
+});
+
+test('migrate moves pre-plant data into a plant', async () => {
+  docs.set('pcs_records/old-1', { name: 'projects/demo-proj/databases/(default)/documents/pcs_records/old-1', fields: toFs({ date: '2026-09-30' }).mapValue.fields });
+  const r = await (await call('/api/admin/migrate', { method: 'POST', body: JSON.stringify({ plant: 'M1' }) })).json();
+  assert.equal(r.moved.pcs_records, 1);
+  assert.ok(docs.has('plants/M1/pcs_records/old-1')); assert.ok(!docs.has('pcs_records/old-1'));
 });
