@@ -51,6 +51,38 @@
   color-scheme: dark;
 }
 
+/* Cards stay white on the navy page: the tokens are redefined on every card, so everything inside follows. */
+.panel, .kpi, .gate-card {
+  --bg: #ffffff;
+  --bg-halo: rgba(179, 132, 51, 0.16);
+  --surface: #ffffff;
+  --surface-hi: #ffffff;
+  --surface-2: #f2f5fa;
+  --raise: #e8edf5;
+  --ink: #0b1a37;
+  --ink-2: #33425f;
+  --muted: #687691;
+  --line: #dde4ee;
+  --line-hi: rgba(255, 255, 255, 0.9);
+  --grid: #e5eaf2;
+  --accent: #b38433;
+  --accent-2: #e8c98c;
+  --accent-wash: rgba(179, 132, 51, 0.12);
+  --plan: #9aa6bf;
+  --actual: #1f6fe0;
+  --actual-glow: rgba(31, 111, 224, 0.3);
+  --good: #17a05f;
+  --good-ink: #0f7a48;
+  --warn: #d99512;
+  --warn-ink: #96650a;
+  --crit: #d94848;
+  --crit-ink: #b12e2e;
+  --tip-bg: rgba(255, 255, 255, 0.97);
+  --shadow: 0 1px 2px rgba(0, 8, 30, 0.12), 0 24px 48px -26px rgba(0, 4, 18, 0.75);
+  color: var(--ink);
+  color-scheme: light;
+}
+
 * { box-sizing: border-box; }
 [hidden] { display: none !important; }
 html, body { margin: 0; }
