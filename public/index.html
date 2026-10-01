@@ -11,36 +11,37 @@
 /* Layout: control-room instrument panel. Glass header + segmented tabs → filter bar → hero (MTD gauge + today's shift) → KPI rail → charts → tables.
    Dark-first: graphite surfaces, brass for chrome, azure for "actual", slate for "plan". */
 :root {
-  --bg: #0a0e13;
-  --bg-halo: rgba(210, 174, 109, 0.10);
-  --bg-halo-2: rgba(76, 147, 242, 0.08);
-  --blueprint: rgba(255, 255, 255, 0.025);
-  --surface: #11171e;
-  --surface-hi: #151c25;
-  --surface-2: #19222c;
-  --raise: #1f2a36;
-  --ink: #eef2f6;
-  --ink-2: #b3becb;
-  --muted: #7c8997;
-  --line: #222d39;
-  --line-hi: rgba(255, 255, 255, 0.06);
-  --grid: #1b242e;
-  --accent: #d2ae6d;
-  --accent-2: #f1dcae;
-  --accent-ink: #19130a;
-  --accent-wash: rgba(210, 174, 109, 0.12);
-  --plan: #6f7d8d;
-  --actual: #4c93f2;
-  --actual-glow: rgba(76, 147, 242, 0.35);
-  --good: #2fbf71;
-  --good-ink: #5bdc93;
+  /* Single deliberate theme: deep navy with brass chrome, the same on every device. */
+  --bg: #061127;
+  --bg-halo: rgba(214, 178, 115, 0.11);
+  --bg-halo-2: rgba(70, 130, 255, 0.16);
+  --blueprint: rgba(150, 185, 255, 0.04);
+  --surface: #0b1a37;
+  --surface-hi: #102347;
+  --surface-2: #132a54;
+  --raise: #183263;
+  --ink: #eef3fb;
+  --ink-2: #b6c4dd;
+  --muted: #8292b2;
+  --line: #1e3463;
+  --line-hi: rgba(255, 255, 255, 0.07);
+  --grid: #19305c;
+  --accent: #d6b273;
+  --accent-2: #f2dfb3;
+  --accent-ink: #1a1307;
+  --accent-wash: rgba(214, 178, 115, 0.13);
+  --plan: #8394b6;
+  --actual: #5aa2ff;
+  --actual-glow: rgba(90, 162, 255, 0.4);
+  --good: #2fc274;
+  --good-ink: #62df9b;
   --warn: #f2b33d;
-  --warn-ink: #f6c766;
-  --crit: #ef5d5d;
-  --crit-ink: #ff8a8a;
+  --warn-ink: #f7c96b;
+  --crit: #f06262;
+  --crit-ink: #ff8f8f;
   --paper: #fbfaf6;
-  --shadow: 0 1px 0 var(--line-hi) inset, 0 20px 40px -24px rgba(0, 0, 0, 0.7);
-  --tip-bg: rgba(15, 21, 28, 0.94);
+  --shadow: 0 1px 0 var(--line-hi) inset, 0 22px 44px -26px rgba(0, 4, 18, 0.85);
+  --tip-bg: rgba(10, 24, 52, 0.96);
   --font-display: "Archivo", "IBM Plex Sans", system-ui, sans-serif;
   --font-ui: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
   --font-data: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
@@ -48,30 +49,6 @@
   --r: 16px;
   --r-sm: 10px;
   color-scheme: dark;
-}
-@media (prefers-color-scheme: light) {
-  :root:not([data-theme="dark"]) {
-    --bg: #eceff3; --bg-halo: rgba(154, 115, 48, 0.10); --bg-halo-2: rgba(37, 99, 201, 0.07); --blueprint: rgba(15, 23, 32, 0.035);
-    --surface: #ffffff; --surface-hi: #ffffff; --surface-2: #f4f6f9; --raise: #ffffff;
-    --ink: #0e1620; --ink-2: #44505d; --muted: #6c7886; --line: #dce2e9; --line-hi: rgba(255, 255, 255, 0.9); --grid: #e8ecf1;
-    --accent: #9a7330; --accent-2: #c79d55; --accent-ink: #ffffff; --accent-wash: rgba(154, 115, 48, 0.10);
-    --plan: #8d98a5; --actual: #2563c9; --actual-glow: rgba(37, 99, 201, 0.25);
-    --good: #1f9d5c; --good-ink: #12754a; --warn: #e5a11a; --warn-ink: #855700; --crit: #d64545; --crit-ink: #b42323;
-    --shadow: 0 1px 2px rgba(14, 22, 32, 0.05), 0 18px 36px -28px rgba(14, 22, 32, 0.35);
-    --tip-bg: rgba(255, 255, 255, 0.97);
-    color-scheme: light;
-  }
-}
-:root[data-theme="light"] {
-  --bg: #eceff3; --bg-halo: rgba(154, 115, 48, 0.10); --bg-halo-2: rgba(37, 99, 201, 0.07); --blueprint: rgba(15, 23, 32, 0.035);
-  --surface: #ffffff; --surface-hi: #ffffff; --surface-2: #f4f6f9; --raise: #ffffff;
-  --ink: #0e1620; --ink-2: #44505d; --muted: #6c7886; --line: #dce2e9; --line-hi: rgba(255, 255, 255, 0.9); --grid: #e8ecf1;
-  --accent: #9a7330; --accent-2: #c79d55; --accent-ink: #ffffff; --accent-wash: rgba(154, 115, 48, 0.10);
-  --plan: #8d98a5; --actual: #2563c9; --actual-glow: rgba(37, 99, 201, 0.25);
-  --good: #1f9d5c; --good-ink: #12754a; --warn: #e5a11a; --warn-ink: #855700; --crit: #d64545; --crit-ink: #b42323;
-  --shadow: 0 1px 2px rgba(14, 22, 32, 0.05), 0 18px 36px -28px rgba(14, 22, 32, 0.35);
-  --tip-bg: rgba(255, 255, 255, 0.97);
-  color-scheme: light;
 }
 
 * { box-sizing: border-box; }
@@ -81,7 +58,8 @@ body {
   color: var(--ink); font: 14px/1.55 var(--font-ui); -webkit-font-smoothing: antialiased;
   background:
     radial-gradient(900px 420px at 8% -8%, var(--bg-halo), transparent 70%),
-    radial-gradient(800px 400px at 100% 0%, var(--bg-halo-2), transparent 70%),
+    radial-gradient(900px 480px at 100% 0%, var(--bg-halo-2), transparent 70%),
+    radial-gradient(1200px 700px at 50% 120%, rgba(18, 52, 120, 0.35), transparent 70%),
     linear-gradient(var(--blueprint) 1px, transparent 1px) 0 0 / 32px 32px,
     linear-gradient(90deg, var(--blueprint) 1px, transparent 1px) 0 0 / 32px 32px,
     var(--bg);
