@@ -161,6 +161,7 @@ input:focus, select:focus { border-color: var(--accent); outline: none; box-shad
 @media (prefers-reduced-motion: reduce) { .gauge .val { animation: none; } }
 .gauge-center { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; padding-top: 6px; }
 .gauge-center .pctv { font-family: var(--font-display); font-weight: 750; font-stretch: 112%; font-size: 40px; line-height: 1; letter-spacing: -0.01em; font-variant-numeric: tabular-nums; }
+.gauge-center .pctv.long { font-size: 32px; font-stretch: 100%; }
 .gauge-center .pctv small { font-size: 18px; color: var(--muted); font-weight: 600; margin-left: 2px; }
 .gauge-center .cap { font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
 .hero-figs { display: flex; flex-direction: column; gap: 14px; min-width: 0; position: relative; z-index: 1; }
@@ -310,6 +311,7 @@ code { font-family: var(--font-data); font-size: 12px; background: var(--surface
   .panel { padding: 16px; }
   .kpi .v, .fig .v { font-size: 22px; }
   .gauge-center .pctv { font-size: 34px; }
+  .gauge-center .pctv.long { font-size: 28px; }
 }
 </style>
 </head>
@@ -1007,7 +1009,7 @@ function renderDashboard() {
   const dp = pct(day.actual, day.plan), dst = statusOf(dp);
   const fig = (k, v, sub = '', sw = '') => `<div class="fig"><div class="k">${sw ? `<i class="sw ${sw}"></i>` : ''}${k}</div><div class="v">${v}</div>${sub ? `<div class="s">${sub}</div>` : ''}</div>`;
   $('#heroGauge').innerHTML = `
-    <div class="gauge">${gaugeSVG(planMtd ? p : 0)}<div class="gauge-center"><div class="pctv">${planMtd ? p.toFixed(1) : '–'}<small>%</small></div><div class="cap">Achievement</div></div></div>
+    <div class="gauge">${gaugeSVG(planMtd ? p : 0)}<div class="gauge-center"><div class="pctv${planMtd && p >= 99.95 ? ' long' : ''}">${planMtd ? p.toFixed(1) : '–'}<small>%</small></div><div class="cap">Achievement</div></div></div>
     <div class="hero-figs">
       <div class="eyebrow">Month to date · accumulated ${shortDate(from)} – ${shortDate(t)}</div>
       <h2>${monthLabel(ym)} <span>output</span></h2>
