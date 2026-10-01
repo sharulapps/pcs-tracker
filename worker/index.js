@@ -463,40 +463,65 @@ async function extractPcs(env, body) {
 /* AI summary of the dashboard                                          */
 /* ------------------------------------------------------------------ */
 
+export const SUMMARY_CATEGORIES = ['Output', 'Machines', 'Selected day', 'Downtime', 'Quality', 'Data', 'Outlook'];
 const SUMMARY_SCHEMA = {
   type: 'OBJECT',
   properties: {
-    headline: { type: 'STRING', description: 'One sentence, the most important thing about output this month to date' },
+    headline: { type: 'STRING', description: 'One sentence: the single most important fact about output month to date, with the achievement %' },
+    overview: { type: 'STRING', description: '2 to 4 sentences: where output stands, the trend, the main reason for any gap, and the outlook to month end' },
     points: {
       type: 'ARRAY',
-      description: '3 to 5 findings, most important first',
+      description: '6 to 12 detailed findings, each with figures, grouped by category, most important first within a category',
       items: {
         type: 'OBJECT',
         properties: {
+          category: { type: 'STRING', enum: SUMMARY_CATEGORIES },
           tone: { type: 'STRING', enum: ['good', 'warn', 'crit', 'info'] },
           text: { type: 'STRING' },
         },
-        required: ['tone', 'text'],
+        required: ['category', 'tone', 'text'],
       },
     },
-    actions: { type: 'ARRAY', items: { type: 'STRING' }, description: '1 to 3 concrete next steps for the production team' },
+    actions: {
+      type: 'ARRAY',
+      description: '3 to 5 concrete next steps',
+      items: {
+        type: 'OBJECT',
+        properties: {
+          priority: { type: 'STRING', enum: ['high', 'medium', 'low'] },
+          text: { type: 'STRING' },
+        },
+        required: ['priority', 'text'],
+      },
+    },
   },
-  required: ['headline', 'points', 'actions'],
+  required: ['headline', 'overview', 'points', 'actions'],
 };
 
 export function summaryPrompt(stats, lang) {
-  const language = lang === 'en' ? 'English' : 'Bahasa Melayu (Malaysian factory style; technical terms such as plan, actual, output, downtime, PCS, reject may stay in English)';
-  return `You are a production analyst at a Malaysian manufacturing plant (M1).
-Summarise plan vs actual output from the dashboard figures below for the production manager.
+  const language = lang === 'en' ? 'English' : 'Bahasa Melayu (Malaysian factory style; technical terms such as plan, actual, output, downtime, PCS, reject, run rate may stay in English)';
+  return `You are a senior production analyst at a Malaysian manufacturing plant (M1). Write a detailed briefing on plan vs actual output for the production manager, based only on the dashboard figures below.
+
+Write in ${language}. Plain, direct sentences. No greetings, no filler.
+
+What to cover (use each category when the data supports it):
+- Output: month-to-date plan vs actual and achievement %, days on target, the 7-day trend versus the previous 7 days, best and worst day, Day vs Night shift.
+- Machines: every machine below 95% with its gap in pcs, the biggest contributors to the total gap, the best performers; name the models behind each gap.
+- Selected day: how the selected date went, run by run where useful; the worst hour of a weak run and its remark.
+- Downtime: downtime minutes and categories (MATERIAL, MACHINE, MAN, METHOD, SS start/stop) and which machines they hit; repeated remarks.
+- Quality: reject/NG pcs and rate, machines with the most rejects.
+- Data: PCS forms not submitted (by machine), unplanned runs, anything that makes the figures incomplete.
+- Outlook: projected month-end output at the current run rate versus the month plan, and the pcs/day needed on the remaining planned days.
 
 Rules:
-- Write in ${language}. Short, plain sentences. No greetings.
-- Use only the numbers given. Do not invent causes; when a remark or downtime note explains a gap, cite it.
-- Plan figures count only up to the selected date (month to date). Upcoming days are not behind.
-- Name machines and models exactly as given. Quote figures with units (pcs, %, min).
-- tone: good = on or above plan, warn = 90-99% or a data gap such as PCS not submitted, crit = below 90% or a big loss, info = neutral.
-- If there is no plan for the month, say the monthly plan has not been imported.
-- actions: concrete and specific (which machine/model, what to check), at most 3.
+- Every point must contain specific figures (pcs, %, min, dates) taken from the data. Do not invent numbers, causes or names.
+- When a remark or downtime note explains a gap, say so and quote it; otherwise do not guess a cause.
+- Plan counts only up to the selected date; upcoming days are not behind.
+- Name machines and models exactly as given.
+- tone: good = on or above plan; warn = 90-99% or a data gap; crit = below 90% or a large loss; info = neutral fact.
+- If there is no plan for the month, say the monthly plan has not been imported and focus on actual output and data.
+- Write 6 to 12 points. Skip a category that has nothing to report rather than padding it.
+- actions: 3 to 5, each naming the machine/model or form and what to do; priority high for the biggest loss or risk.
 
 Dashboard figures (JSON):
 ${JSON.stringify(stats)}`;
@@ -505,15 +530,21 @@ ${JSON.stringify(stats)}`;
 async function summarize(env, body) {
   const stats = body?.stats;
   if (!stats || typeof stats !== 'object') throw httpError('stats is missing', 400);
-  if (JSON.stringify(stats).length > 40000) throw httpError('Too much data to summarise. Narrow the filters.', 413);
+  if (JSON.stringify(stats).length > 60000) throw httpError('Too much data to summarise. Narrow the filters.', 413);
   const { data, model } = await callGemini(env, [{ text: summaryPrompt(stats, body.lang) }], SUMMARY_SCHEMA,
     'Gemini did not return a readable summary. Try again.');
-  const tones = ['good', 'warn', 'crit', 'info'];
+  const tones = ['good', 'warn', 'crit', 'info'], prios = ['high', 'medium', 'low'];
   return {
     headline: str(data.headline, 400),
-    points: (Array.isArray(data.points) ? data.points : []).slice(0, 6)
-      .map(p => ({ tone: tones.includes(p?.tone) ? p.tone : 'info', text: str(p?.text, 400) })).filter(p => p.text),
-    actions: (Array.isArray(data.actions) ? data.actions : []).slice(0, 4).map(a => str(a, 300)).filter(Boolean),
+    overview: str(data.overview, 1200),
+    points: (Array.isArray(data.points) ? data.points : []).slice(0, 14).map(p => ({
+      category: SUMMARY_CATEGORIES.includes(p?.category) ? p.category : 'Output',
+      tone: tones.includes(p?.tone) ? p.tone : 'info',
+      text: str(p?.text, 500),
+    })).filter(p => p.text),
+    actions: (Array.isArray(data.actions) ? data.actions : []).slice(0, 6).map(a => (typeof a === 'string'
+      ? { priority: 'medium', text: str(a, 400) }
+      : { priority: prios.includes(a?.priority) ? a.priority : 'medium', text: str(a?.text, 400) })).filter(a => a.text),
     aiModel: model,
     at: new Date().toISOString(),
   };

@@ -95,7 +95,10 @@ Settings → *Reset demo data* restores the samples.
 
 The dashboard's **AI summary** panel (between the month-to-date cards and the monthly chart) sends the figures already on screen —
 month to date, selected day, last 7 days, machines, best and worst models, missing PCS, top remarks — to `POST /api/summary`.
-Gemini returns a headline, 3–5 findings tagged good / warn / crit / info, and up to 3 suggested actions, in Bahasa Melayu or English.
+The app first works out trend (last 7 vs previous 7 days), best/worst day, Day vs Night, run rate and month-end projection, the selected day run by run
+(worst hour and its remark), downtime by category, rejects by machine and missing PCS by machine, so Gemini quotes figures instead of calculating them.
+Gemini returns a headline, an overview paragraph, 6–12 findings grouped by Output / Machines / Selected day / Downtime / Quality / Data / Outlook
+(each tagged good / warn / crit / info), and 3–5 actions with a priority, in Bahasa Melayu or English.
 It runs only when someone presses the button, and the result is kept per filter selection so re-opening the page does not use quota.
 In demo mode the app writes the summary itself from the same figures and says so.
 

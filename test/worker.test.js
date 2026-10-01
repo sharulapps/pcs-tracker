@@ -27,7 +27,9 @@ globalThis.fetch = async (url, init = {}) => {
     if (body.contents[0].parts.length > 1) assert.equal(body.contents[0].parts[1].inline_data.data, 'AAAA');
     if (body.contents[0].parts.length === 1) {
       assert.match(body.contents[0].parts[0].text, /Bahasa Melayu|English/);
-      return reply({ candidates: [{ content: { parts: [{ text: JSON.stringify({ headline: 'Output 98.7% daripada plan.', points: [{ tone: 'warn', text: 'P11 ketinggalan 554 pcs.' }, { tone: 'weird', text: 'x' }], actions: ['Semak P11.'] }) }] } }] });
+      return reply({ candidates: [{ content: { parts: [{ text: JSON.stringify({ headline: 'Output 98.7% daripada plan.', overview: 'Ringkasan.',
+        points: [{ category: 'Machines', tone: 'warn', text: 'P11 ketinggalan 554 pcs.' }, { category: 'Nope', tone: 'weird', text: 'x' }],
+        actions: [{ priority: 'high', text: 'Semak P11.' }, 'Kumpul PCS.'] }) }] } }] });
     }
     const form = { station: 'P11 SAGA MC3 HI', dateText: '30.9.2026', shift: 'DAY', rows: [{ from: '8', to: '9', plan: 22, planCum: 22, actual: 20, actualCum: 20 }], confidence: 0.9, warnings: [] };
     return reply({ candidates: [{ content: { parts: [{ text: JSON.stringify(form) }] } }] });
@@ -203,8 +205,9 @@ test('summary endpoint returns a cleaned summary', async () => {
   assert.equal(r.status, 200);
   const { summary } = await r.json();
   assert.equal(summary.headline, 'Output 98.7% daripada plan.');
-  assert.deepEqual(summary.points.map(p => p.tone), ['warn', 'info']);
-  assert.deepEqual(summary.actions, ['Semak P11.']);
+  assert.equal(summary.overview, 'Ringkasan.');
+  assert.deepEqual(summary.points.map(p => [p.category, p.tone]), [['Machines', 'warn'], ['Output', 'info']]);
+  assert.deepEqual(summary.actions, [{ priority: 'high', text: 'Semak P11.' }, { priority: 'medium', text: 'Kumpul PCS.' }]);
   const bad = await call('/api/summary', { method: 'POST', body: JSON.stringify({}) });
   assert.equal(bad.status, 400);
 });
