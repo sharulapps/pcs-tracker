@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { generateKeyPairSync } from 'node:crypto';
-import worker, { toFs, fromFs, sanitizeRecord, sanitizePlanEntry, normalizePcsForm, to24h, geminiKeys } from '../worker/index.js';
+import worker, { toFs, fromFs, sanitizeRecord, sanitizePlanEntry, normalizePcsForm, to24h, geminiKeys, geminiModels, geminiFailure } from '../worker/index.js';
 
 const { privateKey } = generateKeyPairSync('rsa', { modulusLength: 2048 });
 const pem = privateKey.export({ type: 'pkcs8', format: 'pem' }).replace(/\n/g, '\\n');
@@ -20,6 +20,8 @@ globalThis.fetch = async (url, init = {}) => {
   }
   if (url.includes('generativelanguage')) {
     if (init.headers['x-goog-api-key'] === 'limited') return reply({ error: { status: 'RESOURCE_EXHAUSTED', message: 'Quota exceeded' } }, 429);
+    if (init.headers['x-goog-api-key'] === 'busy' || (init.headers['x-goog-api-key'] === 'busymain' && url.includes('gemini-3.6-flash')))
+      return reply({ error: { status: 'UNAVAILABLE', message: 'This model is currently experiencing high demand.' } }, 503);
     if (init.headers['x-goog-api-key'] === 'bad') return reply({ error: { status: 'INVALID_ARGUMENT', message: 'API key not valid' } }, 400);
     const body = JSON.parse(init.body);
     assert.equal(body.contents[0].parts[1].inline_data.data, 'AAAA');
@@ -173,4 +175,21 @@ test('Gemini key rotation', async () => {
   assert.equal(all.status, 429); assert.match((await all.json()).error, /at its limit/);
   const bad = await ask('bad,g-key');
   assert.ok([200, 502].includes(bad.status), 'a non-quota error is reported, not rotated past');
+});
+
+test('Gemini busy: retry, then fall back to Flash-Lite, then a clear message', async () => {
+  assert.deepEqual(geminiModels({}), ['gemini-3.6-flash', 'gemini-3.5-flash-lite']);
+  assert.deepEqual(geminiModels({ GEMINI_FALLBACK_MODEL: '' }), ['gemini-3.6-flash']);
+  assert.equal(geminiFailure(503, 'UNAVAILABLE', 'high demand'), 'busy');
+  assert.equal(geminiFailure(429, 'RESOURCE_EXHAUSTED', 'Quota exceeded'), 'quota');
+  const ask = extra => worker.fetch(new Request('https://x.test/api/extract', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ mimeType: 'image/jpeg', imageBase64: 'AAAA' }) }), { GEMINI_RETRY_MS: 0, ...extra });
+  const fb = await ask({ GEMINI_API_KEY: 'busymain' });
+  assert.equal(fb.status, 200);
+  assert.equal((await fb.json()).data.aiModel, 'gemini-3.5-flash-lite');
+  const busy = await ask({ GEMINI_API_KEY: 'busy' });
+  assert.equal(busy.status, 503);
+  assert.match((await busy.json()).error, /Gemini is busy right now/);
+  const off = await ask({ GEMINI_API_KEY: 'busymain', GEMINI_FALLBACK_MODEL: '' });
+  assert.equal(off.status, 503);
 });

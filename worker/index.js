@@ -23,6 +23,7 @@
  *   APP_TOKEN               optional shared token; clients send it as X-App-Token
  * Vars (wrangler.toml):
  *   GEMINI_MODEL            default "gemini-3.6-flash"
+ *   GEMINI_FALLBACK_MODEL   used when the main model is busy or over quota; default "gemini-3.5-flash-lite", "" to turn off
  *   ALLOWED_ORIGIN          CORS origin when the page is hosted elsewhere, default "*"
  */
 
@@ -54,7 +55,8 @@ export default {
           gemini: geminiKeys(env).length > 0,
           geminiKeys: geminiKeys(env).length,
           firestore: !!(env.FIREBASE_PROJECT_ID && env.FIREBASE_CLIENT_EMAIL && env.FIREBASE_PRIVATE_KEY),
-          model: env.GEMINI_MODEL || 'gemini-3.6-flash',
+          model: geminiModels(env)[0],
+          fallbackModels: geminiModels(env).slice(1),
         });
       }
 
@@ -365,9 +367,21 @@ export function geminiKeys(env) {
 }
 let keyCursor = 0; // round-robin start, per Worker instance
 
-/** Rate limit, used-up quota or Gemini overloaded: worth trying the next key. */
-const isRetryable = (status, msg) => status === 429 || status === 503
-  || (status === 403 && /quota|exhausted|rate/i.test(msg)) || /RESOURCE_EXHAUSTED/i.test(msg);
+/** Main model first, then fallbacks (GEMINI_FALLBACK_MODEL, comma separated; "" turns fallback off). */
+export function geminiModels(env) {
+  const fb = env.GEMINI_FALLBACK_MODEL ?? 'gemini-3.5-flash-lite';
+  return [...new Set([env.GEMINI_MODEL || 'gemini-3.6-flash', ...String(fb).split(/[\s,]+/)].filter(Boolean))];
+}
+
+/** "busy": Google overloaded (503 / UNAVAILABLE / high demand). "quota": rate limit or used-up quota on this key. */
+export function geminiFailure(status, statusText, msg) {
+  const t = `${statusText} ${msg}`;
+  if (status === 503 || /UNAVAILABLE|high demand|overloaded/i.test(t)) return 'busy';
+  if (status === 429 || /RESOURCE_EXHAUSTED/i.test(t) || (status === 403 && /quota|rate/i.test(t))) return 'quota';
+  if (status === 404) return 'missing';
+  return 'error';
+}
+const sleep = ms => new Promise(r => setTimeout(r, ms));
 
 async function extractPcs(env, body) {
   const keys = geminiKeys(env);
@@ -383,21 +397,42 @@ async function extractPcs(env, body) {
     contents: [{ role: 'user', parts: [{ text: PROMPT }, { inline_data: { mime_type: mimeType, data: imageBase64 } }] }],
     generationConfig: { responseMimeType: 'application/json', responseSchema: PCS_SCHEMA },
   });
+  // Try each model in turn (main, then fallback). For each model try every key; if Google is busy,
+  // wait and go round the keys once more before moving to the fallback model.
+  const models = geminiModels(env);
+  const pause = Number.isFinite(Number(env.GEMINI_RETRY_MS)) ? Number(env.GEMINI_RETRY_MS) : 1500;
   const start = keyCursor++ % keys.length;
-  let out = null, lastErr = '';
-  for (let i = 0; i < keys.length; i++) {
-    const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-goog-api-key': keys[(start + i) % keys.length] },
-      body: payload,
-    });
-    const body = await res.json().catch(() => ({}));
-    if (res.ok) { out = body; break; }
-    lastErr = body.error?.message || String(res.status);
-    if (res.status === 404) throw httpError(`Gemini model "${model}" was not found. Set GEMINI_MODEL in Cloudflare to a current model name. (${lastErr})`, 502);
-    if (!isRetryable(res.status, `${body.error?.status || ''} ${lastErr}`)) throw httpError('Gemini error: ' + lastErr, 502);
+  let out = null, used = '', lastErr = '';
+  const seen = new Set();
+  outer:
+  for (const model of models) {
+    for (let round = 0; round < 2; round++) {
+      let busy = false;
+      for (let i = 0; i < keys.length; i++) {
+        const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'x-goog-api-key': keys[(start + i) % keys.length] },
+          body: payload,
+        });
+        const body = await res.json().catch(() => ({}));
+        if (res.ok) { out = body; used = model; break outer; }
+        lastErr = body.error?.message || String(res.status);
+        const kind = geminiFailure(res.status, body.error?.status || '', lastErr);
+        seen.add(kind);
+        if (kind === 'missing') {
+          if (model === models[0] && models.length === 1) throw httpError(`Gemini model "${model}" was not found. Set GEMINI_MODEL in Cloudflare to a current model name. (${lastErr})`, 502);
+          continue outer; // try the next model
+        }
+        if (kind === 'error') throw httpError('Gemini error: ' + lastErr, 502);
+        if (kind === 'busy') busy = true;
+      }
+      if (!busy) break; // every key is over quota: no point waiting, go to the fallback model
+      if (round === 0 && pause) await sleep(pause);
+    }
   }
   if (!out) {
+    if (seen.has('busy')) throw httpError(`Gemini is busy right now (high demand on Google's side). Wait a minute and try again. (${lastErr})`, 503);
+    if (seen.has('missing') && !seen.has('quota')) throw httpError(`Gemini model "${models[0]}" was not found. Set GEMINI_MODEL in Cloudflare to a current model name. (${lastErr})`, 502);
     throw httpError(keys.length > 1
       ? `All ${keys.length} Gemini keys are at their limit. Wait a minute and try again. (${lastErr})`
       : `Gemini key is at its limit. Wait a minute and try again, or add another key. (${lastErr})`, 429);
@@ -410,7 +445,7 @@ async function extractPcs(env, body) {
     throw httpError('Gemini did not return readable data. Retake the photo with the whole form in frame.', 502);
   }
   const hr = v => (Number.isInteger(Number(v)) && Number(v) >= 0 && Number(v) <= 23 ? Number(v) : undefined);
-  return normalizePcsForm(raw, { dayStart: hr(body.dayStart) ?? 8, nightStart: hr(body.nightStart) ?? 20 });
+  return { ...normalizePcsForm(raw, { dayStart: hr(body.dayStart) ?? 8, nightStart: hr(body.nightStart) ?? 20 }), aiModel: used };
 }
 
 /* ------------------------------------------------------------------ */

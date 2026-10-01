@@ -11,6 +11,8 @@ binding = "ASSETS"
 
 [vars]
 GEMINI_MODEL = "gemini-3.6-flash"
+# Used when the main model is busy or over quota. "" turns it off.
+GEMINI_FALLBACK_MODEL = "gemini-3.5-flash-lite"
 ALLOWED_ORIGIN = "*"
 
 # Secrets (do not put these in this file):

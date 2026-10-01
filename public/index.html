@@ -1366,7 +1366,7 @@ function fillDraft(d) {
   $('#dMachine').value = d.machine || ''; $('#dModel').value = d.model || '';
   $('#dOperator').value = d.operator || ''; $('#dSupervisor').value = d.supervisor || ''; $('#dDowntime').value = d.downtimeMin || 0;
   $('#dOk').value = d.okQty || ''; $('#dNg').value = d.ngQty || ''; $('#dRework').value = d.reworkQty || '';
-  $('#confLabel').textContent = [d.docNo, typeof d.confidence === 'number' ? `Gemini confidence ${(d.confidence * 100).toFixed(0)}%` : ''].filter(Boolean).join(' · ');
+  $('#confLabel').textContent = [d.docNo, typeof d.confidence === 'number' ? `Gemini confidence ${(d.confidence * 100).toFixed(0)}%` : '', d.aiModel].filter(Boolean).join(' · ');
   const w = (d.warnings || []).filter(Boolean);
   $('#reviewNotices').innerHTML = w.length ? `<div class="notice warn"><span>▲</span><div><b>Check these before saving</b><ul>${w.map(x => `<li>${esc(x)}</li>`).join('')}</ul></div></div>` : '';
   const start = shiftStart($('#dShift').value);

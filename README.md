@@ -91,6 +91,12 @@ Settings → *Reset demo data* restores the samples.
    The Worker serves `public/` and `/api/*` on the same URL. Opening it switches the app to **Live · Firestore**.
    If you set `APP_TOKEN`, enter it once under Settings on each device.
 
+### Gemini model and fallback
+
+`GEMINI_MODEL` (default `gemini-3.6-flash`) reads the form. When Google answers "high demand" (503) the Worker waits and tries again,
+then falls back to `GEMINI_FALLBACK_MODEL` (default `gemini-3.5-flash-lite`; set it to an empty value to turn off).
+The review panel shows which model read the form. When a model is retired, change `GEMINI_MODEL` in Cloudflare; no code change is needed.
+
 ### Several Gemini keys
 
 Put several keys in `GEMINI_API_KEY` separated by commas, or add `GEMINI_API_KEY_2` … `GEMINI_API_KEY_5` (type Secret).
