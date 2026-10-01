@@ -181,6 +181,32 @@ input:focus, select:focus { border-color: var(--accent); outline: none; box-shad
 .meter > b { position: absolute; top: -5px; bottom: -5px; width: 2px; background: var(--ink-2); border-radius: 2px; }
 .meter-legend { display: flex; justify-content: space-between; font-size: 11px; color: var(--muted); font-family: var(--font-data); }
 
+/* AI summary */
+.ai-card { position: relative; overflow: hidden; border-color: color-mix(in srgb, var(--accent) 35%, var(--line)); }
+.ai-card::before { content: ""; position: absolute; inset: 0 0 auto 0; height: 2px; background: linear-gradient(90deg, transparent, var(--accent-2), var(--accent), transparent); }
+.ai-mark { color: var(--accent); margin-right: 2px; }
+.ai-ctl { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.ai-ctl select { min-height: 30px; padding: 4px 10px; font-size: 12.5px; }
+.ai-headline { font-family: var(--font-display); font-weight: 650; font-stretch: 106%; font-size: 17px; line-height: 1.4; margin: 0 0 14px; max-width: 80ch; }
+.ai-grid { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); gap: 18px 28px; }
+@media (max-width: 760px) { .ai-grid { grid-template-columns: 1fr; } }
+.ai-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.ai-list li { display: grid; grid-template-columns: 22px 1fr; gap: 8px; align-items: start; font-size: 13.5px; line-height: 1.5; }
+.ai-ico { width: 20px; height: 20px; border-radius: 50%; display: grid; place-items: center; font-size: 10px; font-weight: 700; margin-top: 1px; }
+.ai-ico.good { color: var(--good-ink); background: color-mix(in srgb, var(--good) 15%, transparent); }
+.ai-ico.warn { color: var(--warn-ink); background: color-mix(in srgb, var(--warn) 18%, transparent); }
+.ai-ico.crit { color: var(--crit-ink); background: color-mix(in srgb, var(--crit) 15%, transparent); }
+.ai-ico.info { color: var(--ink-2); background: var(--surface-2); }
+.ai-actions { background: var(--accent-wash); border: 1px solid color-mix(in srgb, var(--accent) 25%, transparent); border-radius: 12px; padding: 12px 14px; }
+.ai-actions .eyebrow { display: block; margin-bottom: 8px; color: var(--accent); }
+.ai-actions .ai-ico { color: var(--accent); background: transparent; font-size: 13px; }
+.ai-foot { margin-top: 14px; font-size: 11.5px; color: var(--muted); font-family: var(--font-data); display: flex; gap: 6px 14px; flex-wrap: wrap; }
+.ai-empty { color: var(--ink-2); font-size: 13.5px; display: flex; gap: 10px; align-items: center; }
+.ai-stale { color: var(--warn-ink); }
+.shimmer { height: 12px; border-radius: 6px; background: linear-gradient(90deg, var(--surface-2), var(--grid), var(--surface-2)); background-size: 200% 100%; animation: shimmer 1.2s linear infinite; margin: 8px 0; }
+@keyframes shimmer { to { background-position: -200% 0; } }
+@media (prefers-reduced-motion: reduce) { .shimmer { animation: none; } }
+
 /* KPI rail */
 .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 14px; }
 .kpi { background: linear-gradient(180deg, var(--surface-hi), var(--surface)); border: 1px solid var(--line); border-radius: 14px; box-shadow: var(--shadow); padding: 16px 18px; display: flex; flex-direction: column; gap: 6px; min-width: 0; position: relative; }
@@ -358,6 +384,17 @@ code { font-family: var(--font-data); font-size: 12px; background: var(--surface
     <div class="kpi-group">
       <div class="eyebrow" id="kpiMonthLabel">Month to date</div>
       <div class="kpis" id="kpis"></div>
+    </div>
+
+    <div class="panel ai-card" id="aiCard">
+      <div class="panel-head">
+        <h2><span class="ai-mark" aria-hidden="true">✦</span> AI summary</h2>
+        <div class="ai-ctl">
+          <select id="aiLang" aria-label="Summary language"><option value="ms">Bahasa Melayu</option><option value="en">English</option></select>
+          <button class="btn primary small" id="btnAi">Summarize with Gemini</button>
+        </div>
+      </div>
+      <div id="aiBody"></div>
     </div>
 
     <div class="panel">
@@ -1090,7 +1127,7 @@ function renderDashboard() {
 
   $('#kpiMonthLabel').textContent = `Month to date · ${shortDate(from)} – ${shortDate(t)}`;
   $('#kpis').innerHTML = `
-    <div class="kpi"><span class="eyebrow">Balance to month plan</span><span class="v num">${fmt(Math.max(0, balance))}<small>pcs</small></span><span class="s">${balance <= 0 ? '<span class="status good"><i>✓</i>Month plan reached</span>' : daysLeft ? `${daysLeft} planned days left · ${fmt(balance / daysLeft)} pcs/day` : 'No planned days left'}</span></div>
+    <div class="kpi"><span class="eyebrow">Balance to month plan</span><span class="v num">${fmt(Math.max(0, balance))}<small>pcs</small></span><span class="s">${!monthPlan ? 'No plan imported for this month' : balance <= 0 ? '<span class="status good"><i>✓</i>Month plan reached</span>' : daysLeft ? `${daysLeft} planned days left · ${fmt(balance / daysLeft)} pcs/day` : 'No planned days left'}</span></div>
     <div class="kpi"><span class="eyebrow">Days on target</span><span class="v num">${daysMet}<small>/ ${planned.length}</small></span><span class="s">Days where actual ≥ plan</span></div>
     <div class="kpi"><span class="eyebrow">PCS not submitted</span><span class="v num">${pend.length}</span><span class="s">${pend.length ? `<span class="status warn"><i>▲</i>${fmt(pend.reduce((s, x) => s + x.qty, 0))} pcs planned</span>` : '<span class="status good"><i>✓</i>All planned shifts in</span>'}</span></div>
     <div class="kpi"><span class="eyebrow">Reject rate</span><span class="v num">${actualMtd ? ((reject / actualMtd) * 100).toFixed(2) : '0.00'}<small>%</small></span><span class="s">${fmt(reject)} pcs · downtime ${fmt(downtime)} min</span></div>`;
@@ -1116,7 +1153,104 @@ function renderDashboard() {
 
   renderHourly();
   renderMachineTable(plans, recs, t);
+  S.dash = { ym, from, t, plans, recs, days, monthPlan, planMtd, actualMtd, reject, downtime, planned, daysMet, pend, day, balance, daysLeft };
+  renderAiSummary();
 }
+
+/* ---------------- AI summary ---------------- */
+function summaryStats() {
+  const D = S.dash, pc = (a, b) => (b ? Math.round(pct(a, b) * 10) / 10 : null);
+  const groups = (keyFn, label) => {
+    const m = new Map();
+    D.plans.filter(p => p.date <= D.t).forEach(p => { const k = keyFn(p); const x = m.get(k) || { ...label(p), planToDate: 0, actual: 0 }; x.planToDate += p.qty; m.set(k, x); });
+    D.recs.filter(r => r.date <= D.t).forEach(r => { const k = keyFn(r); const x = m.get(k) || { ...label(r), planToDate: 0, actual: 0 }; x.actual += r.totalActual; m.set(k, x); });
+    return [...m.values()].map(x => ({ ...x, pct: pc(x.actual, x.planToDate), gap: x.actual - x.planToDate }));
+  };
+  const machines = groups(x => x.machine, x => ({ machine: x.machine })).sort((a, b) => a.gap - b.gap);
+  const models = groups(x => x.machine + '|' + x.model, x => ({ machine: x.machine, model: x.model })).filter(x => x.planToDate || x.actual).sort((a, b) => a.gap - b.gap);
+  const remarks = new Map();
+  D.recs.filter(r => r.date <= D.t).forEach(r => r.hourly.forEach(h => { if (h.remark) { const k = `${r.machine} ${r.model}: ${h.remark}`; remarks.set(k, (remarks.get(k) || 0) + 1); } }));
+  return {
+    month: D.ym, asOf: D.t, today: today(),
+    filters: { machine: $('#fMachine').value, model: $('#fModel').value, shift: $('#fShift').value },
+    monthPlan: D.monthPlan, planToDate: D.planMtd, actualToDate: D.actualMtd, achievementPct: pc(D.actualMtd, D.planMtd),
+    balanceToMonthPlan: Math.max(0, D.balance), plannedDaysLeft: D.daysLeft, neededPerDay: D.daysLeft && D.balance > 0 ? Math.round(D.balance / D.daysLeft) : 0,
+    daysOnTarget: D.daysMet, plannedDaysToDate: D.planned.length,
+    pcsNotSubmitted: { count: D.pend.length, plannedPcs: D.pend.reduce((s, x) => s + x.qty, 0),
+      examples: D.pend.slice(-8).map(x => `${x.date} ${x.shift} ${x.machine} ${x.model} (${x.qty} pcs)`) },
+    rejectPcs: D.reject, rejectRatePct: D.actualMtd ? Math.round((D.reject / D.actualMtd) * 10000) / 100 : 0, downtimeMin: D.downtime,
+    selectedDay: { date: D.t, plan: D.day.plan, actual: D.day.actual, pct: pc(D.day.actual, D.day.plan) },
+    last7Days: D.days.filter(d => d.date <= D.t && (d.plan || d.actual)).slice(-7).map(d => ({ date: d.date, plan: d.plan, actual: d.actual })),
+    machines: machines.slice(0, 15),
+    worstModels: models.slice(0, 6), bestModels: models.slice(-3).reverse(),
+    unplannedRuns: D.recs.filter(r => r.date <= D.t && !D.plans.some(p => p.id === r.id)).length,
+    topRemarks: [...remarks.entries()].sort((a, b) => b[1] - a[1]).slice(0, 8).map(([text, times]) => ({ text, times })),
+  };
+}
+const aiKey = () => S.dash ? JSON.stringify([S.live, $('#aiLang').value, S.dash.ym, S.dash.t, $('#fMachine').value, $('#fModel').value, $('#fShift').value, S.dash.planMtd, S.dash.actualMtd, S.dash.recs.length]) : '';
+function aiCache(k, v) {
+  S.ai = S.ai || {};
+  if (v === undefined) { if (S.ai[k]) return S.ai[k]; const all = store('pcs.ai.v1') || {}; return all[k] || null; }
+  S.ai[k] = v;
+  const all = store('pcs.ai.v1') || {}; all[k] = v;
+  const keys = Object.keys(all); if (keys.length > 20) keys.slice(0, keys.length - 20).forEach(x => delete all[x]);
+  store('pcs.ai.v1', all);
+}
+const AI_ICON = { good: '✓', warn: '▲', crit: '✕', info: '•' };
+function renderAiSummary(state) {
+  const body = $('#aiBody'); if (!body || !S.dash) return;
+  if (state === 'loading') {
+    body.innerHTML = '<div class="shimmer" style="width:70%"></div><div class="shimmer" style="width:92%"></div><div class="shimmer" style="width:84%"></div><div class="shimmer" style="width:60%"></div>';
+    return;
+  }
+  const sum = aiCache(aiKey());
+  if (!sum) {
+    const last = S.aiLast && S.aiLast.month === S.dash.ym;
+    body.innerHTML = `<div class="ai-empty">${last ? '<span class="ai-stale">▲ The figures changed since the last summary.</span>' : ''} Gemini reads the figures above (month to date, machines, models, remarks) and writes a short summary for the selected filters.</div>`;
+    return;
+  }
+  body.innerHTML = `
+    <p class="ai-headline">${esc(sum.headline)}</p>
+    <div class="ai-grid">
+      <ul class="ai-list">${sum.points.map(p => `<li><span class="ai-ico ${p.tone}">${AI_ICON[p.tone] || '•'}</span><span>${esc(p.text)}</span></li>`).join('')}</ul>
+      ${sum.actions.length ? `<div class="ai-actions"><span class="eyebrow">Suggested actions</span><ul class="ai-list">${sum.actions.map(a => `<li><span class="ai-ico">→</span><span>${esc(a)}</span></li>`).join('')}</ul></div>` : ''}
+    </div>
+    <div class="ai-foot"><span>${esc(sum.aiModel || '')}</span><span>${new Date(sum.at).toLocaleString('en-MY', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}</span><span>Figures ${shortDate(S.dash.from)} – ${shortDate(S.dash.t)}</span><span>Check against the numbers before acting.</span></div>`;
+}
+/** Demo mode: a summary written by the app from the same figures, so the panel can be tried without Gemini. */
+function demoSummary(st, lang) {
+  const ms = lang !== 'en', f = n => fmt(n);
+  const w = st.machines.filter(m => m.planToDate).slice(0, 2), b = [...st.machines].filter(m => m.planToDate).sort((a, c) => (c.pct || 0) - (a.pct || 0))[0];
+  const tone = p => (p >= 100 ? 'good' : p >= 90 ? 'warn' : 'crit');
+  const points = [];
+  if (!st.monthPlan) points.push({ tone: 'info', text: ms ? 'Plan bulan ini belum diimport.' : 'No plan has been imported for this month.' });
+  w.forEach(m => points.push({ tone: tone(m.pct), text: ms ? `${m.machine}: ${f(m.actual)} / ${f(m.planToDate)} pcs (${m.pct}%), kurang ${f(-m.gap)} pcs.` : `${m.machine}: ${f(m.actual)} of ${f(m.planToDate)} pcs (${m.pct}%), ${f(-m.gap)} pcs short.` }));
+  if (b && b.pct >= 100) points.push({ tone: 'good', text: ms ? `${b.machine} paling baik: ${b.pct}% daripada plan.` : `${b.machine} is best at ${b.pct}% of plan.` });
+  if (st.pcsNotSubmitted.count) points.push({ tone: 'warn', text: ms ? `${st.pcsNotSubmitted.count} PCS belum dihantar (${f(st.pcsNotSubmitted.plannedPcs)} pcs plan tiada rekod).` : `${st.pcsNotSubmitted.count} PCS not submitted (${f(st.pcsNotSubmitted.plannedPcs)} planned pcs without a record).` });
+  if (st.topRemarks[0]) points.push({ tone: 'info', text: (ms ? 'Remark paling kerap: ' : 'Most frequent remark: ') + `${st.topRemarks[0].text} (${st.topRemarks[0].times}×).` });
+  const head = st.planToDate
+    ? (ms ? `Output ${st.month} setakat ${st.asOf}: ${f(st.actualToDate)} daripada ${f(st.planToDate)} pcs plan (${st.achievementPct}%), ${st.daysOnTarget}/${st.plannedDaysToDate} hari capai target.`
+          : `Output for ${st.month} up to ${st.asOf}: ${f(st.actualToDate)} of ${f(st.planToDate)} planned pcs (${st.achievementPct}%), ${st.daysOnTarget}/${st.plannedDaysToDate} days on target.`)
+    : (ms ? 'Tiada plan setakat tarikh ini.' : 'No plan up to this date.');
+  const actions = [];
+  if (w[0]) actions.push(ms ? `Semak punca ${w[0].machine} ketinggalan dan pastikan downtime direkod dalam PCS.` : `Find out why ${w[0].machine} is behind and make sure downtime is written on the PCS.`);
+  if (st.pcsNotSubmitted.count) actions.push(ms ? 'Kumpul dan scan PCS yang belum dihantar.' : 'Collect and scan the missing PCS forms.');
+  return { headline: head, points: points.slice(0, 5), actions, aiModel: 'demo · written by the app, not Gemini', at: new Date().toISOString() };
+}
+$('#btnAi').addEventListener('click', async () => {
+  if (!S.dash) return;
+  const btn = $('#btnAi'), k = aiKey(), lang = $('#aiLang').value;
+  btn.disabled = true; renderAiSummary('loading');
+  try {
+    const stats = summaryStats();
+    const sum = S.live
+      ? (await api('/api/summary', { method: 'POST', body: JSON.stringify({ stats, lang }) })).summary
+      : (await new Promise(r => setTimeout(r, 900)), demoSummary(stats, lang));
+    aiCache(k, sum); S.aiLast = { month: S.dash.ym };
+  } catch (e) { toast('Summary failed: ' + e.message); }
+  finally { btn.disabled = false; renderAiSummary(); }
+});
+$('#aiLang').addEventListener('change', () => renderAiSummary());
 $('#tblDaily').addEventListener('click', e => { const tr = e.target.closest('tr[data-date]'); if (!tr) return; $('#fDate').value = tr.dataset.date; renderDashboard(); });
 
 function renderHourly() {

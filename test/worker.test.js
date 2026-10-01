@@ -24,7 +24,11 @@ globalThis.fetch = async (url, init = {}) => {
       return reply({ error: { status: 'UNAVAILABLE', message: 'This model is currently experiencing high demand.' } }, 503);
     if (init.headers['x-goog-api-key'] === 'bad') return reply({ error: { status: 'INVALID_ARGUMENT', message: 'API key not valid' } }, 400);
     const body = JSON.parse(init.body);
-    assert.equal(body.contents[0].parts[1].inline_data.data, 'AAAA');
+    if (body.contents[0].parts.length > 1) assert.equal(body.contents[0].parts[1].inline_data.data, 'AAAA');
+    if (body.contents[0].parts.length === 1) {
+      assert.match(body.contents[0].parts[0].text, /Bahasa Melayu|English/);
+      return reply({ candidates: [{ content: { parts: [{ text: JSON.stringify({ headline: 'Output 98.7% daripada plan.', points: [{ tone: 'warn', text: 'P11 ketinggalan 554 pcs.' }, { tone: 'weird', text: 'x' }], actions: ['Semak P11.'] }) }] } }] });
+    }
     const form = { station: 'P11 SAGA MC3 HI', dateText: '30.9.2026', shift: 'DAY', rows: [{ from: '8', to: '9', plan: 22, planCum: 22, actual: 20, actualCum: 20 }], confidence: 0.9, warnings: [] };
     return reply({ candidates: [{ content: { parts: [{ text: JSON.stringify(form) }] } }] });
   }
@@ -192,4 +196,15 @@ test('Gemini busy: retry, then fall back to Flash-Lite, then a clear message', a
   assert.match((await busy.json()).error, /Gemini is busy right now/);
   const off = await ask({ GEMINI_API_KEY: 'busymain', GEMINI_FALLBACK_MODEL: '' });
   assert.equal(off.status, 503);
+});
+
+test('summary endpoint returns a cleaned summary', async () => {
+  const r = await call('/api/summary', { method: 'POST', body: JSON.stringify({ lang: 'ms', stats: { month: '2026-09', planToDate: 85837, actualToDate: 84680 } }) });
+  assert.equal(r.status, 200);
+  const { summary } = await r.json();
+  assert.equal(summary.headline, 'Output 98.7% daripada plan.');
+  assert.deepEqual(summary.points.map(p => p.tone), ['warn', 'info']);
+  assert.deepEqual(summary.actions, ['Semak P11.']);
+  const bad = await call('/api/summary', { method: 'POST', body: JSON.stringify({}) });
+  assert.equal(bad.status, 400);
 });

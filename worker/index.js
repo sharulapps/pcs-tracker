@@ -10,6 +10,7 @@
  *   GET    /api/plans?from&to     list plan entries from the monthly plan
  *   POST   /api/plans             { month, meta, entries } replace one month's plan
  *   GET    /api/plan-meta         list imported plan months
+ *   POST   /api/summary           { stats, lang } -> Gemini summary of the dashboard figures
  *
  * Everything else is served from ./public (static assets).
  *
@@ -62,6 +63,10 @@ export default {
 
       if (env.APP_TOKEN && request.headers.get('X-App-Token') !== env.APP_TOKEN) {
         return json(env, { error: 'Wrong or missing app token. Set it under Settings.' }, 401);
+      }
+
+      if (url.pathname === '/api/summary' && request.method === 'POST') {
+        return json(env, { summary: await summarize(env, await request.json()) });
       }
 
       if (url.pathname === '/api/extract' && request.method === 'POST') {
@@ -383,22 +388,18 @@ export function geminiFailure(status, statusText, msg) {
 }
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
-async function extractPcs(env, body) {
+/**
+ * Call Gemini with JSON output. Tries each model in turn (main, then fallback); for each model every key.
+ * If Google is busy it waits and goes round the keys once more before moving to the fallback model.
+ * Returns { data, model }.
+ */
+async function callGemini(env, parts, schema, unreadable) {
   const keys = geminiKeys(env);
   if (!keys.length) throw httpError('GEMINI_API_KEY is not set on the Worker', 503);
-  const mimeType = str(body?.mimeType, 40) || 'image/jpeg';
-  const imageBase64 = String(body?.imageBase64 || '');
-  if (!/^image\//.test(mimeType)) throw httpError('Only images are accepted', 400);
-  if (!imageBase64) throw httpError('imageBase64 is missing', 400);
-  if (imageBase64.length * 0.75 > MAX_IMAGE_BYTES) throw httpError('Image is larger than 8 MB', 413);
-
-  const model = env.GEMINI_MODEL || 'gemini-3.6-flash';
   const payload = JSON.stringify({
-    contents: [{ role: 'user', parts: [{ text: PROMPT }, { inline_data: { mime_type: mimeType, data: imageBase64 } }] }],
-    generationConfig: { responseMimeType: 'application/json', responseSchema: PCS_SCHEMA },
+    contents: [{ role: 'user', parts }],
+    generationConfig: { responseMimeType: 'application/json', responseSchema: schema },
   });
-  // Try each model in turn (main, then fallback). For each model try every key; if Google is busy,
-  // wait and go round the keys once more before moving to the fallback model.
   const models = geminiModels(env);
   const pause = Number.isFinite(Number(env.GEMINI_RETRY_MS)) ? Number(env.GEMINI_RETRY_MS) : 1500;
   const start = keyCursor++ % keys.length;
@@ -414,13 +415,13 @@ async function extractPcs(env, body) {
           headers: { 'Content-Type': 'application/json', 'x-goog-api-key': keys[(start + i) % keys.length] },
           body: payload,
         });
-        const body = await res.json().catch(() => ({}));
-        if (res.ok) { out = body; used = model; break outer; }
-        lastErr = body.error?.message || String(res.status);
-        const kind = geminiFailure(res.status, body.error?.status || '', lastErr);
+        const reply = await res.json().catch(() => ({}));
+        if (res.ok) { out = reply; used = model; break outer; }
+        lastErr = reply.error?.message || String(res.status);
+        const kind = geminiFailure(res.status, reply.error?.status || '', lastErr);
         seen.add(kind);
         if (kind === 'missing') {
-          if (model === models[0] && models.length === 1) throw httpError(`Gemini model "${model}" was not found. Set GEMINI_MODEL in Cloudflare to a current model name. (${lastErr})`, 502);
+          if (models.length === 1) throw httpError(`Gemini model "${model}" was not found. Set GEMINI_MODEL in Cloudflare to a current model name. (${lastErr})`, 502);
           continue outer; // try the next model
         }
         if (kind === 'error') throw httpError('Gemini error: ' + lastErr, 502);
@@ -438,14 +439,84 @@ async function extractPcs(env, body) {
       : `Gemini key is at its limit. Wait a minute and try again, or add another key. (${lastErr})`, 429);
   }
   const text = out.candidates?.[0]?.content?.parts?.map(p => p.text || '').join('') || '';
-  let raw;
   try {
-    raw = JSON.parse(text);
+    return { data: JSON.parse(text), model: used };
   } catch {
-    throw httpError('Gemini did not return readable data. Retake the photo with the whole form in frame.', 502);
+    throw httpError(unreadable, 502);
   }
+}
+
+async function extractPcs(env, body) {
+  const mimeType = str(body?.mimeType, 40) || 'image/jpeg';
+  const imageBase64 = String(body?.imageBase64 || '');
+  if (!/^image\//.test(mimeType)) throw httpError('Only images are accepted', 400);
+  if (!imageBase64) throw httpError('imageBase64 is missing', 400);
+  if (imageBase64.length * 0.75 > MAX_IMAGE_BYTES) throw httpError('Image is larger than 8 MB', 413);
+  const { data: raw, model } = await callGemini(env,
+    [{ text: PROMPT }, { inline_data: { mime_type: mimeType, data: imageBase64 } }], PCS_SCHEMA,
+    'Gemini did not return readable data. Retake the photo with the whole form in frame.');
   const hr = v => (Number.isInteger(Number(v)) && Number(v) >= 0 && Number(v) <= 23 ? Number(v) : undefined);
-  return { ...normalizePcsForm(raw, { dayStart: hr(body.dayStart) ?? 8, nightStart: hr(body.nightStart) ?? 20 }), aiModel: used };
+  return { ...normalizePcsForm(raw, { dayStart: hr(body.dayStart) ?? 8, nightStart: hr(body.nightStart) ?? 20 }), aiModel: model };
+}
+
+/* ------------------------------------------------------------------ */
+/* AI summary of the dashboard                                          */
+/* ------------------------------------------------------------------ */
+
+const SUMMARY_SCHEMA = {
+  type: 'OBJECT',
+  properties: {
+    headline: { type: 'STRING', description: 'One sentence, the most important thing about output this month to date' },
+    points: {
+      type: 'ARRAY',
+      description: '3 to 5 findings, most important first',
+      items: {
+        type: 'OBJECT',
+        properties: {
+          tone: { type: 'STRING', enum: ['good', 'warn', 'crit', 'info'] },
+          text: { type: 'STRING' },
+        },
+        required: ['tone', 'text'],
+      },
+    },
+    actions: { type: 'ARRAY', items: { type: 'STRING' }, description: '1 to 3 concrete next steps for the production team' },
+  },
+  required: ['headline', 'points', 'actions'],
+};
+
+export function summaryPrompt(stats, lang) {
+  const language = lang === 'en' ? 'English' : 'Bahasa Melayu (Malaysian factory style; technical terms such as plan, actual, output, downtime, PCS, reject may stay in English)';
+  return `You are a production analyst at a Malaysian manufacturing plant (M1).
+Summarise plan vs actual output from the dashboard figures below for the production manager.
+
+Rules:
+- Write in ${language}. Short, plain sentences. No greetings.
+- Use only the numbers given. Do not invent causes; when a remark or downtime note explains a gap, cite it.
+- Plan figures count only up to the selected date (month to date). Upcoming days are not behind.
+- Name machines and models exactly as given. Quote figures with units (pcs, %, min).
+- tone: good = on or above plan, warn = 90-99% or a data gap such as PCS not submitted, crit = below 90% or a big loss, info = neutral.
+- If there is no plan for the month, say the monthly plan has not been imported.
+- actions: concrete and specific (which machine/model, what to check), at most 3.
+
+Dashboard figures (JSON):
+${JSON.stringify(stats)}`;
+}
+
+async function summarize(env, body) {
+  const stats = body?.stats;
+  if (!stats || typeof stats !== 'object') throw httpError('stats is missing', 400);
+  if (JSON.stringify(stats).length > 40000) throw httpError('Too much data to summarise. Narrow the filters.', 413);
+  const { data, model } = await callGemini(env, [{ text: summaryPrompt(stats, body.lang) }], SUMMARY_SCHEMA,
+    'Gemini did not return a readable summary. Try again.');
+  const tones = ['good', 'warn', 'crit', 'info'];
+  return {
+    headline: str(data.headline, 400),
+    points: (Array.isArray(data.points) ? data.points : []).slice(0, 6)
+      .map(p => ({ tone: tones.includes(p?.tone) ? p.tone : 'info', text: str(p?.text, 400) })).filter(p => p.text),
+    actions: (Array.isArray(data.actions) ? data.actions : []).slice(0, 4).map(a => str(a, 300)).filter(Boolean),
+    aiModel: model,
+    at: new Date().toISOString(),
+  };
 }
 
 /* ------------------------------------------------------------------ */
