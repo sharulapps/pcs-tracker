@@ -1,6 +1,8 @@
 name = "pcs-tracker"
 main = "worker/index.js"
 compatibility_date = "2026-09-01"
+# Keep variables added in the Cloudflare dashboard when deploying from GitHub.
+keep_vars = true
 
 # Serves public/index.html; /api/* falls through to the Worker.
 [assets]

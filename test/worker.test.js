@@ -108,3 +108,9 @@ test('health check=1 signs in and reads Firestore', async () => {
   const bad = await (await worker.fetch(new Request('https://x.test/api/health?check=1'), { ...env, FIREBASE_PRIVATE_KEY: 'not a key' })).json();
   assert.match(bad.check.googleAuth, /not a valid private key/);
 });
+
+test('health check names missing Firebase secrets', async () => {
+  const h = await (await worker.fetch(new Request('https://x.test/api/health?check=1'), { GEMINI_API_KEY: 'k' })).json();
+  assert.equal(h.firestore, false);
+  assert.match(h.check.googleAuth, /Missing on the Worker: FIREBASE_PROJECT_ID, FIREBASE_CLIENT_EMAIL, FIREBASE_PRIVATE_KEY/);
+});

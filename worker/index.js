@@ -270,6 +270,8 @@ async function extractPcs(env, body) {
 let cachedToken = null; // { who, token, exp }
 
 async function googleAccessToken(env) {
+  const missing = ['FIREBASE_PROJECT_ID', 'FIREBASE_CLIENT_EMAIL', 'FIREBASE_PRIVATE_KEY'].filter(k => !env[k]);
+  if (missing.length) throw httpError(`Missing on the Worker: ${missing.join(', ')}. Add them in Cloudflare → Settings → Variables and Secrets as type Secret.`, 503);
   const now = Math.floor(Date.now() / 1000);
   const who = `${env.FIREBASE_CLIENT_EMAIL}|${env.FIREBASE_PRIVATE_KEY}`;
   if (cachedToken && cachedToken.who === who && cachedToken.exp - 60 > now) return cachedToken.token;
@@ -309,7 +311,7 @@ async function googleAccessToken(env) {
 }
 
 async function firestore(env, path, init = {}, { allow404 = false } = {}) {
-  if (!env.FIREBASE_PROJECT_ID) throw httpError('Firestore is not configured on the Worker', 503);
+  if (!env.FIREBASE_PROJECT_ID) throw httpError('FIREBASE_PROJECT_ID is missing on the Worker. Add it in Cloudflare → Settings → Variables and Secrets as type Secret.', 503);
   const base = `https://firestore.googleapis.com/v1/projects/${env.FIREBASE_PROJECT_ID}/databases/(default)/documents`;
   const res = await fetch(base + path, {
     ...init,
