@@ -1,0 +1,19 @@
+name = "pcs-tracker"
+main = "worker/index.js"
+compatibility_date = "2026-09-01"
+
+# Serves public/index.html; /api/* falls through to the Worker.
+[assets]
+directory = "./public"
+binding = "ASSETS"
+
+[vars]
+GEMINI_MODEL = "gemini-2.5-flash"
+ALLOWED_ORIGIN = "*"
+
+# Secrets (do not put these in this file):
+#   npx wrangler secret put GEMINI_API_KEY
+#   npx wrangler secret put FIREBASE_PROJECT_ID
+#   npx wrangler secret put FIREBASE_CLIENT_EMAIL
+#   npx wrangler secret put FIREBASE_PRIVATE_KEY
+#   npx wrangler secret put APP_TOKEN        (optional)

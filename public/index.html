@@ -1,0 +1,1017 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>PCS Output Tracker</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&family=Caveat:wght@500;700&display=swap">
+<style>
+/* Layout: sticky form-code header + tab strip, then one working column of filter row → KPI strip → charts → tables. */
+:root {
+  --bg: #f2f4f6;
+  --surface: #ffffff;
+  --surface-2: #f7f8fa;
+  --ink: #13171b;
+  --ink-2: #4a525b;
+  --muted: #78808a;
+  --line: #dde1e6;
+  --grid: #e8ebee;
+  --accent: #1e5bb8;
+  --accent-ink: #ffffff;
+  --accent-wash: rgba(30, 91, 184, 0.08);
+  --plan: #8b9098;
+  --actual: #2a78d6;
+  --good: #0ca30c;
+  --good-ink: #006300;
+  --warn: #fab219;
+  --warn-ink: #7a5000;
+  --crit: #d03b3b;
+  --crit-ink: #b02a2a;
+  --paper: #fbfaf6;
+  --shadow: 0 1px 2px rgba(19, 23, 27, 0.06), 0 0 0 1px rgba(19, 23, 27, 0.06);
+  --font-ui: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-data: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+  --font-hand: "Caveat", "Comic Sans MS", cursive;
+  --r: 8px;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0e1013; --surface: #171a1e; --surface-2: #1d2126; --ink: #f1f3f5; --ink-2: #c1c7ce;
+    --muted: #8a929b; --line: #2b3036; --grid: #23282d; --accent: #5b9bef; --accent-ink: #0e1013;
+    --accent-wash: rgba(91, 155, 239, 0.12); --plan: #8b9098; --actual: #3987e5;
+    --good-ink: #3fcf3f; --warn-ink: #fab219; --crit-ink: #ef7070; --paper: #fbfaf6;
+    --shadow: 0 0 0 1px rgba(255, 255, 255, 0.07);
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0e1013; --surface: #171a1e; --surface-2: #1d2126; --ink: #f1f3f5; --ink-2: #c1c7ce;
+  --muted: #8a929b; --line: #2b3036; --grid: #23282d; --accent: #5b9bef; --accent-ink: #0e1013;
+  --accent-wash: rgba(91, 155, 239, 0.12); --plan: #8b9098; --actual: #3987e5;
+  --good-ink: #3fcf3f; --warn-ink: #fab219; --crit-ink: #ef7070; --paper: #fbfaf6;
+  --shadow: 0 0 0 1px rgba(255, 255, 255, 0.07);
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html, body { margin: 0; }
+body { background: var(--bg); color: var(--ink); font: 14px/1.5 var(--font-ui); -webkit-font-smoothing: antialiased; }
+h1, h2, h3 { margin: 0; text-wrap: balance; }
+button, input, select { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.num { font-family: var(--font-data); font-variant-numeric: tabular-nums; }
+
+/* Header */
+.top { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 20; background: var(--surface); border-bottom: 1px solid var(--line); }
+.top-inner { max-width: 1180px; margin: 0 auto; padding: 10px 16px 0; display: flex; flex-direction: column; gap: 8px; }
+.brand { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.stamp { font-family: var(--font-data); font-size: 11px; font-weight: 600; letter-spacing: 0.08em; border: 1.5px solid var(--ink); padding: 2px 6px; border-radius: 3px; }
+.brand h1 { font-size: 17px; font-weight: 600; }
+.brand .sub { color: var(--muted); font-size: 12px; font-family: var(--font-data); }
+.mode-pill { margin-left: auto; font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; padding: 3px 8px; border-radius: 999px; display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--line); color: var(--ink-2); }
+.mode-pill::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--warn); }
+.mode-pill.live::before { background: var(--good); }
+.tabs { display: flex; gap: 2px; overflow-x: auto; scrollbar-width: none; }
+.tabs button { background: none; border: 0; padding: 8px 12px 10px; cursor: pointer; color: var(--ink-2); font-weight: 500; border-bottom: 2px solid transparent; white-space: nowrap; }
+.tabs button[aria-selected="true"] { color: var(--ink); border-bottom-color: var(--accent); }
+.tabs button:hover { color: var(--ink); }
+
+main { max-width: 1180px; margin: 0 auto; padding: 16px 16px 48px; display: flex; flex-direction: column; gap: 16px; }
+section.view { display: flex; flex-direction: column; gap: 16px; }
+
+.panel { background: var(--surface); border-radius: var(--r); box-shadow: var(--shadow); padding: 16px; min-width: 0; }
+.panel-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
+.panel-head h2 { font-size: 15px; font-weight: 600; }
+.panel-head .hint { color: var(--muted); font-size: 12px; }
+.eyebrow { font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
+
+/* Filters */
+.filters { display: flex; flex-wrap: wrap; gap: 10px 12px; align-items: end; }
+.field { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.field label { font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
+input[type="date"], input[type="text"], input[type="number"], input[type="url"], input[type="password"], select {
+  background: var(--surface); border: 1px solid var(--line); border-radius: 6px; padding: 7px 9px; min-height: 36px; min-width: 0;
+}
+input:focus, select:focus { border-color: var(--accent); outline: none; box-shadow: 0 0 0 3px var(--accent-wash); }
+.presets { display: flex; gap: 4px; flex-wrap: wrap; }
+.btn { border: 1px solid var(--line); background: var(--surface); border-radius: 6px; padding: 7px 12px; min-height: 36px; cursor: pointer; font-weight: 500; display: inline-flex; align-items: center; gap: 6px; justify-content: center; }
+.btn:hover { background: var(--surface-2); }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.btn.primary:hover { filter: brightness(1.08); }
+.btn.ghost { border-color: transparent; background: none; }
+.btn.danger { color: var(--crit-ink); }
+.btn.small { min-height: 30px; padding: 4px 9px; font-size: 13px; }
+.btn[disabled] { opacity: 0.55; cursor: not-allowed; }
+.btn.on { background: var(--accent-wash); border-color: var(--accent); color: var(--accent); }
+
+/* KPIs */
+.kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; }
+.kpi { background: var(--surface); border-radius: var(--r); box-shadow: var(--shadow); padding: 14px 16px; display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.kpi .v { font-size: 26px; font-weight: 600; line-height: 1.15; letter-spacing: -0.01em; }
+.kpi .v small { font-size: 13px; color: var(--muted); font-weight: 500; margin-left: 3px; }
+.kpi .s { font-size: 12px; color: var(--ink-2); }
+
+.status { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 600; padding: 2px 8px; border-radius: 999px; white-space: nowrap; }
+.status i { font-style: normal; font-size: 11px; }
+.status.good { color: var(--good-ink); background: color-mix(in srgb, var(--good) 14%, transparent); }
+.status.warn { color: var(--warn-ink); background: color-mix(in srgb, var(--warn) 20%, transparent); }
+.status.crit { color: var(--crit-ink); background: color-mix(in srgb, var(--crit) 14%, transparent); }
+.delta-pos { color: var(--good-ink); }
+.delta-neg { color: var(--crit-ink); }
+
+.grid-2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 460px), 1fr)); gap: 16px; }
+
+/* Charts */
+.legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: 12px; color: var(--ink-2); }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.sw { width: 12px; height: 12px; border-radius: 3px; display: inline-block; }
+.sw.plan { background: var(--plan); }
+.sw.actual { background: var(--actual); }
+.sw.line-plan { height: 0; border-top: 2px dashed var(--plan); border-radius: 0; width: 16px; }
+.sw.line-actual { height: 3px; background: var(--actual); border-radius: 2px; width: 16px; }
+.chart { position: relative; width: 100%; min-height: 240px; touch-action: pan-y; }
+.chart svg { display: block; width: 100%; overflow: visible; }
+.chart text { fill: var(--muted); font-family: var(--font-data); font-size: 10.5px; }
+.chart .gridline { stroke: var(--grid); stroke-width: 1; }
+.chart .baseline { stroke: var(--line); stroke-width: 1; }
+.chart .bar-plan { fill: var(--plan); }
+.chart .bar-actual { fill: var(--actual); }
+.chart .hl { fill: var(--accent-wash); }
+.chart .ln-plan { fill: none; stroke: var(--plan); stroke-width: 2; stroke-dasharray: 5 4; }
+.chart .ln-actual { fill: none; stroke: var(--actual); stroke-width: 2; }
+.chart .area-actual { fill: var(--actual); opacity: 0.08; }
+.chart .dot-plan { fill: var(--plan); stroke: var(--surface); stroke-width: 2; }
+.chart .dot-actual { fill: var(--actual); stroke: var(--surface); stroke-width: 2; }
+.chart .xhair { stroke: var(--muted); stroke-width: 1; stroke-dasharray: 2 3; }
+.chart .ach-label { font-size: 10px; }
+.tip { position: absolute; pointer-events: none; background: var(--surface); color: var(--ink); box-shadow: 0 4px 16px rgba(0,0,0,0.14), 0 0 0 1px var(--line); border-radius: 6px; padding: 8px 10px; font-size: 12px; min-width: 150px; z-index: 5; }
+.tip b { display: block; margin-bottom: 4px; font-size: 12px; }
+.tip .row { display: flex; justify-content: space-between; gap: 14px; }
+.tip .row span:first-child { color: var(--ink-2); display: inline-flex; align-items: center; gap: 5px; }
+.tip .sw { width: 8px; height: 8px; }
+.empty { color: var(--muted); padding: 32px 8px; text-align: center; }
+
+/* Tables */
+.table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 6px; }
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+th { text-align: left; font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); font-weight: 600; padding: 8px 10px; background: var(--surface-2); border-bottom: 1px solid var(--line); white-space: nowrap; }
+td { padding: 8px 10px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+tr:last-child td { border-bottom: 0; }
+td.r, th.r { text-align: right; }
+td.num { font-family: var(--font-data); font-variant-numeric: tabular-nums; }
+tfoot td { font-weight: 600; background: var(--surface-2); }
+tr.detail td { background: var(--surface-2); white-space: normal; }
+.bar-cell { display: flex; align-items: center; gap: 8px; justify-content: flex-end; }
+.mini { width: 70px; height: 6px; border-radius: 3px; background: var(--grid); overflow: hidden; position: relative; }
+.mini > i { position: absolute; inset: 0 auto 0 0; background: var(--actual); border-radius: 3px; }
+
+/* Scan */
+.scan-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 380px), 1fr)); gap: 16px; align-items: start; }
+.drop { border: 1.5px dashed var(--line); border-radius: var(--r); padding: 20px; display: flex; flex-direction: column; gap: 12px; align-items: center; text-align: center; background: var(--surface-2); }
+.drop.drag { border-color: var(--accent); background: var(--accent-wash); }
+.drop p { margin: 0; color: var(--ink-2); max-width: 44ch; }
+.drop .actions { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
+.preview { width: 100%; border-radius: 6px; border: 1px solid var(--line); background: var(--paper); display: block; }
+.progress { display: flex; align-items: center; gap: 10px; color: var(--ink-2); font-size: 13px; }
+.spinner { width: 16px; height: 16px; border: 2px solid var(--line); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .spinner { animation-duration: 3s; } }
+.form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px 12px; }
+.form-grid input, .form-grid select { width: 100%; }
+.hour-table input { width: 100%; min-width: 64px; padding: 5px 7px; min-height: 32px; }
+.hour-table input.slot { min-width: 108px; }
+.hour-table input.remark { min-width: 120px; }
+.hour-table td { padding: 5px 6px; }
+.notice { border-radius: 6px; padding: 10px 12px; font-size: 13px; display: flex; gap: 8px; align-items: flex-start; }
+.notice.warn { background: color-mix(in srgb, var(--warn) 16%, transparent); color: var(--ink); }
+.notice.info { background: var(--accent-wash); color: var(--ink); }
+.notice ul { margin: 4px 0 0; padding-left: 18px; }
+.row-actions { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+.conf { font-family: var(--font-data); font-size: 12px; color: var(--ink-2); }
+
+/* Settings */
+.flow { margin: 0; padding: 0; list-style: none; display: grid; gap: 10px; counter-reset: step; }
+.flow li { display: grid; grid-template-columns: 28px 1fr; gap: 10px; align-items: start; counter-increment: step; }
+.flow li::before { content: counter(step); width: 24px; height: 24px; border-radius: 50%; border: 1.5px solid var(--ink-2); font-family: var(--font-data); font-size: 12px; display: grid; place-items: center; }
+.flow b { display: block; }
+.flow span { color: var(--ink-2); font-size: 13px; }
+.stack { display: flex; flex-direction: column; gap: 12px; }
+.check { display: flex; gap: 8px; align-items: center; }
+code { font-family: var(--font-data); font-size: 12px; background: var(--surface-2); padding: 1px 5px; border-radius: 4px; border: 1px solid var(--line); }
+
+.toast { position: fixed; left: 50%; bottom: calc(20px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); background: var(--ink); color: var(--bg); padding: 10px 16px; border-radius: 8px; font-size: 13px; z-index: 50; box-shadow: 0 6px 20px rgba(0,0,0,0.2); max-width: calc(100% - 32px); }
+
+@media (max-width: 560px) {
+  .kpi .v { font-size: 22px; }
+  .brand .sub { display: none; }
+}
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="top-inner">
+    <div class="brand">
+      <span class="stamp">PCS-01</span>
+      <h1>Production Output Tracker</h1>
+      <span class="sub">Plan vs Actual · output · daily · hourly</span>
+      <span id="modePill" class="mode-pill">Demo data</span>
+    </div>
+    <nav class="tabs" role="tablist" aria-label="Sections">
+      <button role="tab" id="tab-dashboard" aria-selected="true" data-view="dashboard">Dashboard</button>
+      <button role="tab" id="tab-scan" aria-selected="false" data-view="scan">Scan PCS form</button>
+      <button role="tab" id="tab-records" aria-selected="false" data-view="records">Records</button>
+      <button role="tab" id="tab-settings" aria-selected="false" data-view="settings">Settings</button>
+    </nav>
+  </div>
+</header>
+
+<main>
+  <!-- DASHBOARD -->
+  <section class="view" id="view-dashboard">
+    <div class="panel">
+      <div class="filters">
+        <div class="field"><label for="fFrom">From</label><input type="date" id="fFrom"></div>
+        <div class="field"><label for="fTo">To</label><input type="date" id="fTo"></div>
+        <div class="field"><label for="fLine">Line</label><select id="fLine"><option value="all">All lines</option></select></div>
+        <div class="field"><label for="fShift">Shift</label><select id="fShift"><option value="all">All shifts</option><option>Day</option><option>Night</option></select></div>
+        <div class="field">
+          <label>Range</label>
+          <div class="presets" id="presets">
+            <button class="btn small" data-days="7">7 days</button>
+            <button class="btn small" data-days="14">14 days</button>
+            <button class="btn small" data-days="30">30 days</button>
+            <button class="btn small" data-days="mtd">Month to date</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="kpis" id="kpis"></div>
+
+    <div class="panel">
+      <div class="panel-head">
+        <h2>Production output · cumulative plan vs actual</h2>
+        <div class="legend" id="cumLegend"></div>
+      </div>
+      <div class="chart" id="chartCum"></div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head">
+        <h2>Daily plan vs actual</h2>
+        <div class="legend"><span><i class="sw plan"></i>Plan</span><span><i class="sw actual"></i>Actual</span></div>
+      </div>
+      <div class="chart" id="chartDaily"></div>
+      <div class="table-wrap" style="margin-top:12px">
+        <table id="tblDaily"></table>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head">
+        <h2>Hourly plan vs actual</h2>
+        <div class="filters">
+          <div class="field"><label for="hDate">Date</label><input type="date" id="hDate"></div>
+          <div class="field"><label for="hLine">Line</label><select id="hLine"><option value="all">All lines</option></select></div>
+        </div>
+      </div>
+      <div class="legend" style="margin-bottom:6px"><span><i class="sw plan"></i>Plan</span><span><i class="sw actual"></i>Actual</span></div>
+      <div class="chart" id="chartHourly"></div>
+      <div class="table-wrap" style="margin-top:12px">
+        <table id="tblHourly"></table>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head"><h2>By line</h2><span class="hint">Selected date range</span></div>
+      <div class="table-wrap"><table id="tblLines"></table></div>
+    </div>
+  </section>
+
+  <!-- SCAN -->
+  <section class="view" id="view-scan" hidden>
+    <div class="scan-grid">
+      <div class="panel stack">
+        <div class="panel-head" style="margin:0"><h2>1 · Snap the PCS form</h2></div>
+        <div class="drop" id="drop">
+          <p>Take a photo of the filled Production Control Sheet, or pick one from the gallery. Keep the whole table in frame and avoid glare.</p>
+          <div class="actions">
+            <label class="btn primary" for="fileCam">Take photo</label>
+            <label class="btn" for="fileGal">Choose image</label>
+            <button class="btn" id="btnSample">Use sample form</button>
+          </div>
+          <input type="file" id="fileCam" accept="image/*" capture="environment" hidden>
+          <input type="file" id="fileGal" accept="image/*" hidden>
+        </div>
+        <img id="preview" class="preview" alt="Captured PCS form" hidden>
+        <div class="row-actions">
+          <button class="btn primary" id="btnExtract" disabled>Extract with Gemini</button>
+        </div>
+        <div class="progress" id="extractProgress" hidden><span class="spinner"></span><span id="extractMsg">Gemini is reading the form…</span></div>
+      </div>
+
+      <div class="panel stack" id="reviewPanel">
+        <div class="panel-head" style="margin:0">
+          <h2>2 · Check and save</h2>
+          <span class="conf" id="confLabel"></span>
+        </div>
+        <div id="reviewEmpty" class="empty">Extracted data shows up here. Check every number against the paper form before you save.</div>
+        <div id="reviewBody" class="stack" hidden>
+          <div id="reviewNotices" class="stack"></div>
+          <div class="form-grid">
+            <div class="field"><label for="dDate">Date</label><input type="date" id="dDate"></div>
+            <div class="field"><label for="dShift">Shift</label><select id="dShift"><option>Day</option><option>Night</option></select></div>
+            <div class="field"><label for="dLine">Line</label><input type="text" id="dLine" list="lineList"></div>
+            <div class="field"><label for="dPartNo">Part no.</label><input type="text" id="dPartNo"></div>
+            <div class="field"><label for="dPartName">Part name</label><input type="text" id="dPartName"></div>
+            <div class="field"><label for="dSupervisor">Supervisor</label><input type="text" id="dSupervisor"></div>
+            <div class="field"><label for="dDailyPlan">Daily plan (pcs)</label><input type="number" id="dDailyPlan" min="0" inputmode="numeric"></div>
+            <div class="field"><label for="dDowntime">Downtime (min)</label><input type="number" id="dDowntime" min="0" inputmode="numeric"></div>
+          </div>
+          <datalist id="lineList"></datalist>
+          <div class="table-wrap">
+            <table class="hour-table" id="hourEdit"></table>
+          </div>
+          <div class="row-actions">
+            <button class="btn" id="btnAddHour">Add hour</button>
+            <button class="btn ghost" id="btnDiscard">Discard</button>
+            <button class="btn primary" id="btnSave">Save record</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- RECORDS -->
+  <section class="view" id="view-records" hidden>
+    <div class="panel">
+      <div class="panel-head">
+        <h2>PCS records</h2>
+        <span class="hint" id="recHint"></span>
+      </div>
+      <div class="table-wrap"><table id="tblRecords"></table></div>
+    </div>
+  </section>
+
+  <!-- SETTINGS -->
+  <section class="view" id="view-settings" hidden>
+    <div class="grid-2">
+      <div class="panel stack">
+        <div class="panel-head" style="margin:0"><h2>Connection</h2><span id="connStatus" class="status warn"><i>▲</i>Demo mode</span></div>
+        <p style="margin:0;color:var(--ink-2)" id="connText"></p>
+        <div class="field"><label for="sApi">Worker URL</label><input type="url" id="sApi" placeholder="Blank = same site as this page"></div>
+        <div class="field"><label for="sToken">App token</label><input type="password" id="sToken" placeholder="Matches APP_TOKEN secret on the Worker"></div>
+        <label class="check"><input type="checkbox" id="sDemo"> Always use demo mode (data stays in this browser)</label>
+        <div class="row-actions">
+          <button class="btn" id="btnResetDemo">Reset demo data</button>
+          <button class="btn primary" id="btnSaveSettings">Save and reconnect</button>
+        </div>
+      </div>
+      <div class="panel">
+        <div class="panel-head"><h2>How a PCS form reaches the dashboard</h2></div>
+        <ol class="flow">
+          <li><div><b>Snap</b><span>Operator or supervisor photographs the paper PCS form at the line.</span></div></li>
+          <li><div><b>Cloudflare Worker</b><span>Page sends the photo to <code>/api/extract</code>. The Gemini key stays on the Worker.</span></div></li>
+          <li><div><b>Gemini extracts</b><span>Header fields and each hour's plan, actual, reject and remarks come back as JSON.</span></div></li>
+          <li><div><b>Human check</b><span>Supervisor corrects any misread numbers, then saves.</span></div></li>
+          <li><div><b>Firestore</b><span>Worker writes the record to the <code>pcs_records</code> collection.</span></div></li>
+          <li><div><b>Dashboard</b><span>Output, daily and hourly plan vs actual update from the saved records.</span></div></li>
+        </ol>
+      </div>
+    </div>
+  </section>
+</main>
+
+<div id="toast" class="toast" role="status" hidden></div>
+
+<script>
+'use strict';
+/* =========================================================================
+   PCS Output Tracker — vanilla JS front end
+   Live mode: talks to the Cloudflare Worker (/api/*) which calls Gemini and
+   Firestore. Demo mode: seeded records in this browser, simulated extraction.
+   ========================================================================= */
+
+const DEMO_KEY = 'pcs.demo.records.v1';
+const SETTINGS_KEY = 'pcs.settings.v1';
+const SLOTS_DAY = ['08:00-09:00', '09:00-10:00', '10:00-11:00', '11:00-12:00', '13:00-14:00', '14:00-15:00', '15:00-16:00', '16:00-17:00'];
+
+const $ = (s, el = document) => el.querySelector(s);
+const $$ = (s, el = document) => [...el.querySelectorAll(s)];
+const fmt = n => (Math.round(n) || 0).toLocaleString('en-MY');
+const pct = (a, p) => (p > 0 ? (a / p) * 100 : 0);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const toISO = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+const addDays = (iso, n) => { const d = new Date(iso + 'T00:00:00'); d.setDate(d.getDate() + n); return toISO(d); };
+const shortDate = iso => { const d = new Date(iso + 'T00:00:00'); return d.toLocaleDateString('en-MY', { day: 'numeric', month: 'short' }); };
+const dowDate = iso => { const d = new Date(iso + 'T00:00:00'); return d.toLocaleDateString('en-MY', { weekday: 'short', day: 'numeric', month: 'short' }); };
+
+function store(key, val) { try { if (val === undefined) return JSON.parse(localStorage.getItem(key)); localStorage.setItem(key, JSON.stringify(val)); } catch (e) { return null; } }
+
+function statusOf(p) {
+  if (p >= 100) return { cls: 'good', icon: '✓', label: 'On target' };
+  if (p >= 90) return { cls: 'warn', icon: '▲', label: 'Near target' };
+  return { cls: 'crit', icon: '✕', label: 'Behind' };
+}
+const statusPill = p => { const s = statusOf(p); return `<span class="status ${s.cls}"><i>${s.icon}</i>${p.toFixed(1)}%</span>`; };
+const deltaSpan = v => `<span class="${v >= 0 ? 'delta-pos' : 'delta-neg'}">${v >= 0 ? '+' : '−'}${fmt(Math.abs(v))}</span>`;
+
+function toast(msg) {
+  const t = $('#toast'); t.textContent = msg; t.hidden = false;
+  clearTimeout(toast._t); toast._t = setTimeout(() => (t.hidden = true), 2600);
+}
+
+/* ---------------- Record helpers ---------------- */
+function normalizeRecord(r) {
+  const hourly = (Array.isArray(r.hourly) ? r.hourly : []).map(h => ({
+    slot: String(h.slot ?? '').trim(),
+    plan: Math.max(0, Number(h.plan) || 0),
+    actual: Math.max(0, Number(h.actual) || 0),
+    reject: Math.max(0, Number(h.reject) || 0),
+    remark: String(h.remark ?? '').trim(),
+  })).filter(h => h.slot || h.plan || h.actual);
+  const hourPlan = hourly.reduce((s, h) => s + h.plan, 0);
+  const out = {
+    id: r.id,
+    date: /^\d{4}-\d{2}-\d{2}$/.test(r.date) ? r.date : toISO(new Date()),
+    shift: r.shift === 'Night' ? 'Night' : 'Day',
+    line: String(r.line || 'Unassigned').trim(),
+    partNo: String(r.partNo ?? '').trim(),
+    partName: String(r.partName ?? '').trim(),
+    supervisor: String(r.supervisor ?? '').trim(),
+    dailyPlan: Number(r.dailyPlan) > 0 ? Number(r.dailyPlan) : hourPlan,
+    downtimeMin: Math.max(0, Number(r.downtimeMin) || 0),
+    hourly,
+    source: r.source || 'manual',
+    createdAt: r.createdAt || new Date().toISOString(),
+  };
+  out.totalActual = hourly.reduce((s, h) => s + h.actual, 0);
+  out.totalReject = hourly.reduce((s, h) => s + h.reject, 0);
+  return out;
+}
+
+/* ---------------- Demo data ---------------- */
+function mulberry32(a) { return function () { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+const DEMO_LINES = [
+  { line: 'Line A', partNo: 'BRKT-2231', partName: 'Bracket, seat rail', perHour: 120, sup: 'Faizal' },
+  { line: 'Line B', partNo: 'HSG-1180', partName: 'Housing, pump', perHour: 90, sup: 'Mei Ling' },
+  { line: 'Line C', partNo: 'CVR-0457', partName: 'Cover, battery', perHour: 150, sup: 'Ravi' },
+];
+function seedDemo() {
+  const rnd = mulberry32(20260930);
+  const today = toISO(new Date());
+  const recs = [];
+  for (let back = 27; back >= 0; back--) {
+    const date = addDays(today, -back);
+    if (new Date(date + 'T00:00:00').getDay() === 0) continue; // Sunday off
+    const dayF = 0.95 + rnd() * 0.1;
+    DEMO_LINES.forEach((L, li) => {
+      const bias = [1.0, 0.93, 1.02][li] * dayF;
+      const badHour = rnd() < 0.3 ? Math.floor(rnd() * SLOTS_DAY.length) : -1;
+      const hourly = SLOTS_DAY.map((slot, i) => {
+        const plan = i === 0 ? Math.round(L.perHour * 0.85) : L.perHour; // warm-up first hour
+        let f = bias + (rnd() - 0.5) * 0.16;
+        let remark = '';
+        if (i === badHour) { f = 0.35 + rnd() * 0.3; remark = ['Die change', 'Material shortage', 'Machine stop – sensor', 'QC hold'][Math.floor(rnd() * 4)]; }
+        const actual = Math.max(0, Math.round(plan * f));
+        const reject = Math.round(actual * (0.004 + rnd() * 0.018));
+        return { slot, plan, actual, reject, remark };
+      });
+      recs.push(normalizeRecord({
+        id: `demo-${date}-${li}`, date, shift: 'Day', line: L.line, partNo: L.partNo, partName: L.partName,
+        supervisor: L.sup, dailyPlan: hourly.reduce((s, h) => s + h.plan, 0),
+        downtimeMin: badHour >= 0 ? 20 + Math.round(rnd() * 30) : 0, hourly, source: 'demo',
+        createdAt: date + 'T17:15:00+08:00',
+      }));
+    });
+  }
+  return recs;
+}
+
+/* Sample PCS form: drawn on canvas; the demo extraction returns exactly these values. */
+function sampleFormData() {
+  const hourly = [
+    ['08:00-09:00', 76, 71, 1, ''], ['09:00-10:00', 90, 88, 2, ''], ['10:00-11:00', 90, 92, 1, ''],
+    ['11:00-12:00', 90, 54, 0, 'Material shortage 25 min'], ['13:00-14:00', 90, 86, 2, ''],
+    ['14:00-15:00', 90, 91, 1, ''], ['15:00-16:00', 90, 89, 0, ''], ['16:00-17:00', 90, 84, 1, 'Cleaning'],
+  ].map(([slot, plan, actual, reject, remark]) => ({ slot, plan, actual, reject, remark }));
+  return {
+    date: toISO(new Date()), shift: 'Day', line: 'Line B', partNo: 'HSG-1180', partName: 'Housing, pump',
+    supervisor: 'Mei Ling', dailyPlan: 706, downtimeMin: 25, hourly,
+    confidence: 0.93, warnings: ['Row 11:00-12:00: actual "54" is written over a correction. Please confirm.'],
+  };
+}
+async function drawSampleForm() {
+  try { await document.fonts.load('26px Caveat'); } catch (e) { /* fallback font */ }
+  const d = sampleFormData();
+  const W = 900, H = 1180, c = document.createElement('canvas');
+  c.width = W; c.height = H;
+  const g = c.getContext('2d');
+  g.fillStyle = '#fbfaf6'; g.fillRect(0, 0, W, H);
+  g.fillStyle = '#1b1f24'; g.strokeStyle = '#1b1f24';
+  g.font = '600 26px "IBM Plex Sans", Arial'; g.fillText('PRODUCTION CONTROL SHEET (PCS)', 50, 70);
+  g.font = '14px "IBM Plex Mono", monospace'; g.fillText('Form PCS-01  Rev.3', 700, 70);
+  g.lineWidth = 2; g.strokeRect(40, 40, W - 80, H - 80);
+  const hand = (t, x, y, size = 30) => { g.save(); g.fillStyle = '#1d3f9a'; g.font = `600 ${size}px Caveat, "Comic Sans MS", cursive`; g.fillText(t, x, y); g.restore(); };
+  const label = (t, x, y) => { g.font = '600 15px "IBM Plex Sans", Arial'; g.fillStyle = '#1b1f24'; g.fillText(t, x, y); };
+  const fields = [['Date', d.date.split('-').reverse().join('/'), 60, 130], ['Shift', d.shift, 470, 130], ['Line', d.line, 60, 180], ['Part No', d.partNo, 470, 180], ['Part Name', d.partName, 60, 230], ['Daily Plan', String(d.dailyPlan) + ' pcs', 470, 230], ['Supervisor', d.supervisor, 60, 280], ['Downtime', d.downtimeMin + ' min', 470, 280]];
+  fields.forEach(([k, v, x, y]) => { label(k + ':', x, y); g.lineWidth = 1; g.beginPath(); g.moveTo(x + 105, y + 6); g.lineTo(x + 380, y + 6); g.stroke(); hand(v, x + 115, y); });
+  const cols = [60, 250, 380, 510, 620, 840], top = 330, rh = 64;
+  const heads = ['Time', 'Plan', 'Actual', 'Reject', 'Remarks'];
+  g.lineWidth = 1.5;
+  for (let i = 0; i <= d.hourly.length + 2; i++) { g.beginPath(); g.moveTo(cols[0], top + i * rh); g.lineTo(cols[5], top + i * rh); g.stroke(); }
+  cols.forEach(x => { g.beginPath(); g.moveTo(x, top); g.lineTo(x, top + (d.hourly.length + 2) * rh); g.stroke(); });
+  heads.forEach((h, i) => label(h, cols[i] + 12, top + 40));
+  d.hourly.forEach((h, i) => {
+    const y = top + (i + 1) * rh + 42;
+    g.font = '15px "IBM Plex Mono", monospace'; g.fillStyle = '#1b1f24'; g.fillText(h.slot, cols[0] + 12, y);
+    hand(String(h.plan), cols[1] + 30, y, 32);
+    if (h.slot === '11:00-12:00') { hand('64', cols[2] + 30, y, 32); g.strokeStyle = '#1d3f9a'; g.beginPath(); g.moveTo(cols[2] + 24, y - 10); g.lineTo(cols[2] + 70, y - 14); g.stroke(); g.strokeStyle = '#1b1f24'; hand('54', cols[2] + 74, y - 8, 30); }
+    else hand(String(h.actual), cols[2] + 30, y, 32);
+    hand(String(h.reject), cols[3] + 30, y, 32);
+    if (h.remark) hand(h.remark.length > 16 ? h.remark.slice(0, 16) + '…' : h.remark, cols[4] + 8, y, 22);
+  });
+  const ty = top + (d.hourly.length + 1) * rh + 42;
+  label('TOTAL', cols[0] + 12, ty);
+  hand(String(d.hourly.reduce((s, h) => s + h.plan, 0)), cols[1] + 22, ty, 32);
+  hand(String(d.hourly.reduce((s, h) => s + h.actual, 0)), cols[2] + 22, ty, 32);
+  hand(String(d.hourly.reduce((s, h) => s + h.reject, 0)), cols[3] + 30, ty, 32);
+  label('Checked by:', 60, H - 90); hand('ML', 170, H - 88);
+  return c.toDataURL('image/jpeg', 0.9);
+}
+
+/* ---------------- Data stores ---------------- */
+const Settings = Object.assign({ apiBase: '', token: '', forceDemo: false }, store(SETTINGS_KEY) || {});
+let demoMemory = null;
+
+const DemoStore = {
+  load() {
+    if (demoMemory) return demoMemory;
+    demoMemory = store(DEMO_KEY);
+    if (!Array.isArray(demoMemory) || !demoMemory.length) { demoMemory = seedDemo(); store(DEMO_KEY, demoMemory); }
+    return demoMemory;
+  },
+  async list(from, to) { return this.load().filter(r => r.date >= from && r.date <= to); },
+  async add(rec) { const r = normalizeRecord({ ...rec, id: 'local-' + Date.now().toString(36) }); this.load().push(r); store(DEMO_KEY, demoMemory); return r; },
+  async remove(id) { demoMemory = this.load().filter(r => r.id !== id); store(DEMO_KEY, demoMemory); },
+  reset() { demoMemory = seedDemo(); store(DEMO_KEY, demoMemory); },
+  async extract(imageDataUrl, isSample) {
+    await new Promise(r => setTimeout(r, 1600));
+    if (isSample) return sampleFormData();
+    const d = sampleFormData();
+    d.warnings = ['Demo mode: these numbers are simulated, not read from your photo. Connect the Worker to use real Gemini extraction.'];
+    d.confidence = null;
+    return d;
+  },
+};
+
+function api(path, opts = {}) {
+  const base = (Settings.apiBase || '').replace(/\/+$/, '');
+  const headers = { 'Content-Type': 'application/json', ...(Settings.token ? { 'X-App-Token': Settings.token } : {}) };
+  return fetch(base + path, { ...opts, headers: { ...headers, ...(opts.headers || {}) } }).then(async res => {
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(body.error || `Request failed (${res.status})`);
+    return body;
+  });
+}
+const LiveStore = {
+  async list(from, to) { return (await api(`/api/records?from=${from}&to=${to}`)).records.map(normalizeRecord); },
+  async add(rec) { return normalizeRecord((await api('/api/records', { method: 'POST', body: JSON.stringify(rec) })).record); },
+  async remove(id) { await api('/api/records/' + encodeURIComponent(id), { method: 'DELETE' }); },
+  async extract(imageDataUrl) {
+    const [, mime, b64] = imageDataUrl.match(/^data:([^;]+);base64,(.*)$/) || [];
+    return (await api('/api/extract', { method: 'POST', body: JSON.stringify({ mimeType: mime, imageBase64: b64 }) })).data;
+  },
+};
+
+/* ---------------- App state ---------------- */
+const S = { live: false, health: null, records: [], lines: [], scan: { image: null, isSample: false, draft: null } };
+const Store = () => (S.live ? LiveStore : DemoStore);
+
+async function detectMode() {
+  S.live = false; S.health = null;
+  if (!Settings.forceDemo) {
+    try {
+      const ctl = new AbortController(); const t = setTimeout(() => ctl.abort(), 3500);
+      const h = await api('/api/health', { signal: ctl.signal }); clearTimeout(t);
+      S.health = h; S.live = !!(h.ok && h.firestore);
+    } catch (e) { S.health = { error: e.message }; }
+  }
+  const pill = $('#modePill');
+  pill.textContent = S.live ? 'Live · Firestore' : 'Demo data';
+  pill.classList.toggle('live', S.live);
+  const cs = $('#connStatus');
+  cs.className = 'status ' + (S.live ? 'good' : 'warn');
+  cs.innerHTML = S.live ? '<i>✓</i>Connected' : '<i>▲</i>Demo mode';
+  $('#connText').textContent = S.live
+    ? `Worker reachable. Firestore ${S.health.firestore ? 'ready' : 'not set up'}, Gemini ${S.health.gemini ? 'ready' : 'not set up'}.`
+    : Settings.forceDemo
+      ? 'Demo mode is switched on. Records live only in this browser and extraction is simulated.'
+      : 'No Worker found at this address, so the app runs on sample records in this browser. Scans use simulated extraction.';
+}
+
+/* ---------------- Filters ---------------- */
+function setRange(days) {
+  const today = toISO(new Date());
+  $('#fTo').value = today;
+  $('#fFrom').value = days === 'mtd' ? today.slice(0, 8) + '01' : addDays(today, -(days - 1));
+  $$('#presets .btn').forEach(b => b.classList.toggle('on', b.dataset.days === String(days)));
+  store(SETTINGS_KEY + '.range', days);
+}
+
+async function loadRecords() {
+  const from = $('#fFrom').value, to = $('#fTo').value;
+  try { S.records = await Store().list(from, to); }
+  catch (e) { toast('Could not load records: ' + e.message); S.records = []; }
+  S.lines = [...new Set(S.records.map(r => r.line))].sort();
+  const allLines = [...new Set([...S.lines, ...DEMO_LINES.map(l => l.line)])].sort();
+  for (const id of ['#fLine', '#hLine']) {
+    const sel = $(id), cur = sel.value;
+    sel.innerHTML = '<option value="all">All lines</option>' + S.lines.map(l => `<option>${esc(l)}</option>`).join('');
+    sel.value = S.lines.includes(cur) ? cur : 'all';
+  }
+  $('#lineList').innerHTML = allLines.map(l => `<option value="${esc(l)}">`).join('');
+}
+
+function filtered() {
+  const line = $('#fLine').value, shift = $('#fShift').value;
+  return S.records.filter(r => (line === 'all' || r.line === line) && (shift === 'all' || r.shift === shift));
+}
+
+/* ---------------- Aggregation ---------------- */
+function byDate(recs, from, to) {
+  const m = new Map();
+  for (let d = from; d <= to; d = addDays(d, 1)) m.set(d, { date: d, plan: 0, actual: 0, reject: 0, n: 0 });
+  recs.forEach(r => { const x = m.get(r.date); if (x) { x.plan += r.dailyPlan; x.actual += r.totalActual; x.reject += r.totalReject; x.n++; } });
+  return [...m.values()];
+}
+function byHour(recs) {
+  const m = new Map();
+  recs.forEach(r => r.hourly.forEach(h => {
+    const x = m.get(h.slot) || { slot: h.slot, plan: 0, actual: 0, reject: 0, remarks: [] };
+    x.plan += h.plan; x.actual += h.actual; x.reject += h.reject;
+    if (h.remark) x.remarks.push((recs.length > 1 ? r.line + ': ' : '') + h.remark);
+    m.set(h.slot, x);
+  }));
+  return [...m.values()];
+}
+
+/* ---------------- Charts (hand-drawn SVG) ---------------- */
+const NS = 'http://www.w3.org/2000/svg';
+function niceMax(v) { if (v <= 0) return 10; const p = Math.pow(10, Math.floor(Math.log10(v))); const f = v / p; return (f <= 1 ? 1 : f <= 2 ? 2 : f <= 2.5 ? 2.5 : f <= 5 ? 5 : 10) * p; }
+function el(tag, attrs, parent) { const e = document.createElementNS(NS, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); if (parent) parent.appendChild(e); return e; }
+function barPath(x, y, w, h) { const r = Math.min(4, w / 2, h); return `M${x},${y + h}V${y + r}Q${x},${y} ${x + r},${y}H${x + w - r}Q${x + w},${y} ${x + w},${y + r}V${y + h}Z`; }
+function shortNum(v) { return v >= 10000 ? (v / 1000).toFixed(v >= 100000 ? 0 : 1).replace(/\.0$/, '') + 'k' : fmt(v); }
+
+function placeTip(host, tip, px, py) {
+  const hw = host.clientWidth, tw = tip.offsetWidth, th = tip.offsetHeight;
+  let x = px + 14; if (x + tw > hw) x = px - tw - 14; if (x < 0) x = Math.max(0, Math.min(hw - tw, px - tw / 2));
+  let y = py - th - 10; if (y < 0) y = py + 16;
+  tip.style.left = x + 'px'; tip.style.top = y + 'px';
+}
+function tipRows(title, plan, actual, extra = '') {
+  const p = pct(actual, plan);
+  return `<b>${esc(title)}</b>
+    <div class="row"><span><i class="sw plan"></i>Plan</span><span class="num">${fmt(plan)}</span></div>
+    <div class="row"><span><i class="sw actual"></i>Actual</span><span class="num">${fmt(actual)}</span></div>
+    <div class="row"><span>Variance</span><span class="num">${deltaSpan(actual - plan)}</span></div>
+    <div class="row"><span>Achievement</span><span>${statusPill(p)}</span></div>${extra}`;
+}
+function frame(host, H) {
+  host.innerHTML = '';
+  const W = Math.max(280, host.clientWidth || 600);
+  const svg = el('svg', { viewBox: `0 0 ${W} ${H}`, height: H, role: 'img' }, host);
+  const tip = document.createElement('div'); tip.className = 'tip'; tip.hidden = true; host.appendChild(tip);
+  return { W, H, svg, tip };
+}
+function yAxis(svg, m, W, H, max) {
+  const ih = H - m.t - m.b;
+  for (let i = 0; i <= 4; i++) {
+    const v = (max / 4) * i, y = m.t + ih - (v / max) * ih;
+    el('line', { x1: m.l, x2: W - m.r, y1: y, y2: y, class: i === 0 ? 'baseline' : 'gridline' }, svg);
+    el('text', { x: m.l - 6, y: y + 3.5, 'text-anchor': 'end' }, svg).textContent = shortNum(v);
+  }
+}
+
+function groupedBars(host, rows, { label, tipTitle, tipExtra, showPct = true }) {
+  if (!rows.length || rows.every(r => !r.plan && !r.actual)) { host.innerHTML = '<div class="empty">No records for this selection.</div>'; return; }
+  const { W, H, svg, tip } = frame(host, 260);
+  const m = { l: 44, r: 6, t: showPct ? 22 : 10, b: 26 };
+  const iw = W - m.l - m.r, ih = H - m.t - m.b;
+  const max = niceMax(Math.max(...rows.map(r => Math.max(r.plan, r.actual))) * 1.05);
+  yAxis(svg, m, W, H, max);
+  const gw = iw / rows.length;
+  const bw = Math.max(2, Math.min(18, (gw * 0.72 - 2) / 2));
+  const every = Math.max(1, Math.ceil(46 / gw));
+  const hl = el('rect', { class: 'hl', y: m.t, height: ih, width: gw, rx: 4, visibility: 'hidden' }, svg);
+  rows.forEach((r, i) => {
+    const cx = m.l + gw * i + gw / 2;
+    const y = v => m.t + ih - (v / max) * ih;
+    if (r.plan > 0) el('path', { class: 'bar-plan', d: barPath(cx - bw - 1, y(r.plan), bw, m.t + ih - y(r.plan)) }, svg);
+    if (r.actual > 0) el('path', { class: 'bar-actual', d: barPath(cx + 1, y(r.actual), bw, m.t + ih - y(r.actual)) }, svg);
+    if (i % every === 0) el('text', { x: cx, y: H - 8, 'text-anchor': 'middle' }, svg).textContent = label(r);
+    if (showPct && r.plan > 0 && gw >= 34) {
+      const t = el('text', { x: cx, y: m.t - 8, 'text-anchor': 'middle', class: 'ach-label' }, svg);
+      t.textContent = Math.round(pct(r.actual, r.plan)) + '%';
+    }
+    const hit = el('rect', { x: m.l + gw * i, y: 0, width: gw, height: H, fill: 'transparent' }, svg);
+    const show = ev => {
+      hl.setAttribute('x', m.l + gw * i); hl.setAttribute('visibility', 'visible');
+      tip.innerHTML = tipRows(tipTitle(r), r.plan, r.actual, tipExtra ? tipExtra(r) : ''); tip.hidden = false;
+      const b = host.getBoundingClientRect(); placeTip(host, tip, ev.clientX - b.left, ev.clientY - b.top);
+    };
+    hit.addEventListener('pointermove', show); hit.addEventListener('pointerdown', show);
+  });
+  svg.addEventListener('pointerleave', () => { tip.hidden = true; hl.setAttribute('visibility', 'hidden'); });
+}
+
+function cumulativeLines(host, rows) {
+  if (!rows.length || rows.every(r => !r.plan && !r.actual)) { host.innerHTML = '<div class="empty">No records for this selection.</div>'; $('#cumLegend').innerHTML = ''; return; }
+  let cp = 0, ca = 0;
+  const pts = rows.map(r => ({ ...r, cp: (cp += r.plan), ca: (ca += r.actual) }));
+  const { W, H, svg, tip } = frame(host, 260);
+  const m = { l: 44, r: 10, t: 10, b: 26 };
+  const iw = W - m.l - m.r, ih = H - m.t - m.b;
+  const max = niceMax(Math.max(cp, ca) * 1.05);
+  yAxis(svg, m, W, H, max);
+  const n = pts.length, step = n > 1 ? iw / (n - 1) : 0;
+  const X = i => m.l + (n > 1 ? step * i : iw / 2), Y = v => m.t + ih - (v / max) * ih;
+  const every = Math.max(1, Math.ceil(64 / Math.max(step, 1)));
+  pts.forEach((p, i) => { if (i % every === 0) el('text', { x: X(i), y: H - 8, 'text-anchor': 'middle' }, svg).textContent = shortDate(p.date); });
+  const path = k => pts.map((p, i) => `${i ? 'L' : 'M'}${X(i).toFixed(1)},${Y(p[k]).toFixed(1)}`).join('');
+  el('path', { class: 'area-actual', d: path('ca') + `L${X(n - 1)},${Y(0)}L${X(0)},${Y(0)}Z` }, svg);
+  el('path', { class: 'ln-plan', d: path('cp') }, svg);
+  el('path', { class: 'ln-actual', d: path('ca') }, svg);
+  el('circle', { class: 'dot-plan', cx: X(n - 1), cy: Y(cp), r: 4 }, svg);
+  el('circle', { class: 'dot-actual', cx: X(n - 1), cy: Y(ca), r: 4.5 }, svg);
+  const xh = el('line', { class: 'xhair', y1: m.t, y2: m.t + ih, visibility: 'hidden' }, svg);
+  const dp = el('circle', { class: 'dot-plan', r: 4, visibility: 'hidden' }, svg);
+  const da = el('circle', { class: 'dot-actual', r: 4.5, visibility: 'hidden' }, svg);
+  const hit = el('rect', { x: m.l, y: 0, width: iw, height: H, fill: 'transparent' }, svg);
+  const move = ev => {
+    const b = host.getBoundingClientRect(), sx = W / b.width;
+    const x = (ev.clientX - b.left) * sx;
+    const i = Math.max(0, Math.min(n - 1, Math.round((x - m.l) / (step || 1))));
+    const p = pts[i];
+    [xh].forEach(l => { l.setAttribute('x1', X(i)); l.setAttribute('x2', X(i)); l.setAttribute('visibility', 'visible'); });
+    dp.setAttribute('cx', X(i)); dp.setAttribute('cy', Y(p.cp)); dp.setAttribute('visibility', 'visible');
+    da.setAttribute('cx', X(i)); da.setAttribute('cy', Y(p.ca)); da.setAttribute('visibility', 'visible');
+    tip.innerHTML = tipRows('To ' + dowDate(p.date) + ' (cumulative)', p.cp, p.ca); tip.hidden = false;
+    placeTip(host, tip, X(i) / sx, ev.clientY - b.top);
+  };
+  hit.addEventListener('pointermove', move); hit.addEventListener('pointerdown', move);
+  hit.addEventListener('pointerleave', () => { tip.hidden = true; [xh, dp, da].forEach(e => e.setAttribute('visibility', 'hidden')); });
+  $('#cumLegend').innerHTML = `<span><i class="sw line-plan"></i>Plan <b class="num">${fmt(cp)}</b></span><span><i class="sw line-actual"></i>Actual <b class="num">${fmt(ca)}</b></span>`;
+}
+
+/* ---------------- Dashboard render ---------------- */
+function renderDashboard() {
+  const from = $('#fFrom').value, to = $('#fTo').value;
+  const recs = filtered();
+  const days = byDate(recs, from, to);
+  const worked = days.filter(d => d.n);
+  const plan = recs.reduce((s, r) => s + r.dailyPlan, 0);
+  const actual = recs.reduce((s, r) => s + r.totalActual, 0);
+  const reject = recs.reduce((s, r) => s + r.totalReject, 0);
+  const downtime = recs.reduce((s, r) => s + r.downtimeMin, 0);
+  const p = pct(actual, plan), st = statusOf(p);
+  const daysMet = worked.filter(d => d.actual >= d.plan).length;
+  const last = worked[worked.length - 1];
+
+  $('#kpis').innerHTML = `
+    <div class="kpi"><span class="eyebrow">Output plan</span><span class="v num">${fmt(plan)}<small>pcs</small></span><span class="s">${worked.length} production day${worked.length === 1 ? '' : 's'}</span></div>
+    <div class="kpi"><span class="eyebrow">Output actual</span><span class="v num">${fmt(actual)}<small>pcs</small></span><span class="s">Variance ${deltaSpan(actual - plan)} pcs</span></div>
+    <div class="kpi"><span class="eyebrow">Achievement</span><span class="v num">${plan ? p.toFixed(1) : '–'}<small>%</small></span><span class="s">${plan ? `<span class="status ${st.cls}"><i>${st.icon}</i>${st.label}</span>` : 'No plan in range'}</span></div>
+    <div class="kpi"><span class="eyebrow">Days on target</span><span class="v num">${daysMet}<small>/ ${worked.length}</small></span><span class="s">${last ? `Latest ${shortDate(last.date)}: ${pct(last.actual, last.plan).toFixed(1)}%` : '—'}</span></div>
+    <div class="kpi"><span class="eyebrow">Reject rate</span><span class="v num">${actual ? ((reject / actual) * 100).toFixed(2) : '0.00'}<small>%</small></span><span class="s">${fmt(reject)} pcs · downtime ${fmt(downtime)} min</span></div>`;
+
+  cumulativeLines($('#chartCum'), worked.length ? days : []);
+
+  groupedBars($('#chartDaily'), worked.length ? days : [], {
+    label: d => shortDate(d.date),
+    tipTitle: d => dowDate(d.date),
+    tipExtra: d => d.n ? `<div class="row"><span>Reject</span><span class="num">${fmt(d.reject)}</span></div>` : '<div class="row"><span>No production</span><span></span></div>',
+  });
+
+  const drows = worked.slice().reverse();
+  $('#tblDaily').innerHTML = `<thead><tr><th>Date</th><th class="r">Plan</th><th class="r">Actual</th><th class="r">Variance</th><th class="r">Reject</th><th class="r">Achievement</th></tr></thead>
+    <tbody>${drows.map(d => `<tr><td>${dowDate(d.date)}</td><td class="r num">${fmt(d.plan)}</td><td class="r num">${fmt(d.actual)}</td><td class="r num">${deltaSpan(d.actual - d.plan)}</td><td class="r num">${fmt(d.reject)}</td><td class="r">${statusPill(pct(d.actual, d.plan))}</td></tr>`).join('') || '<tr><td colspan="6" class="empty">No records.</td></tr>'}</tbody>
+    ${drows.length ? `<tfoot><tr><td>Total</td><td class="r num">${fmt(plan)}</td><td class="r num">${fmt(actual)}</td><td class="r num">${deltaSpan(actual - plan)}</td><td class="r num">${fmt(reject)}</td><td class="r">${statusPill(p)}</td></tr></tfoot>` : ''}`;
+
+  // Hourly: default to the latest date with data
+  const hd = $('#hDate');
+  if (!hd.value || hd.value < from || hd.value > to || !recs.some(r => r.date === hd.value)) hd.value = last ? last.date : to;
+  if ($('#hLine').value === 'all' && $('#fLine').value !== 'all') $('#hLine').value = $('#fLine').value;
+  renderHourly();
+
+  // By line
+  const lm = new Map();
+  S.records.filter(r => $('#fShift').value === 'all' || r.shift === $('#fShift').value).forEach(r => {
+    const x = lm.get(r.line) || { line: r.line, plan: 0, actual: 0, reject: 0, down: 0, part: r.partNo };
+    x.plan += r.dailyPlan; x.actual += r.totalActual; x.reject += r.totalReject; x.down += r.downtimeMin; lm.set(r.line, x);
+  });
+  const lrows = [...lm.values()].sort((a, b) => a.line.localeCompare(b.line));
+  $('#tblLines').innerHTML = `<thead><tr><th>Line</th><th>Part</th><th class="r">Plan</th><th class="r">Actual</th><th class="r">Variance</th><th class="r">Downtime</th><th class="r">Achievement</th></tr></thead>
+    <tbody>${lrows.map(l => { const lp = pct(l.actual, l.plan); return `<tr><td><b>${esc(l.line)}</b></td><td>${esc(l.part)}</td><td class="r num">${fmt(l.plan)}</td><td class="r num">${fmt(l.actual)}</td><td class="r num">${deltaSpan(l.actual - l.plan)}</td><td class="r num">${fmt(l.down)} min</td><td class="r"><div class="bar-cell"><span class="mini"><i style="width:${Math.min(100, lp)}%"></i></span>${statusPill(lp)}</div></td></tr>`; }).join('') || '<tr><td colspan="7" class="empty">No records.</td></tr>'}</tbody>`;
+}
+
+function renderHourly() {
+  const date = $('#hDate').value, line = $('#hLine').value, shift = $('#fShift').value;
+  const recs = S.records.filter(r => r.date === date && (line === 'all' || r.line === line) && (shift === 'all' || r.shift === shift));
+  const hours = byHour(recs);
+  groupedBars($('#chartHourly'), hours, {
+    label: h => h.slot.split('-')[0],
+    tipTitle: h => h.slot + (line === 'all' ? ' · all lines' : ' · ' + line),
+    tipExtra: h => (h.reject ? `<div class="row"><span>Reject</span><span class="num">${fmt(h.reject)}</span></div>` : '') + (h.remarks.length ? `<div style="margin-top:4px;color:var(--ink-2);white-space:normal;max-width:220px">${h.remarks.map(esc).join('<br>')}</div>` : ''),
+  });
+  let cp = 0, ca = 0;
+  $('#tblHourly').innerHTML = `<thead><tr><th>Hour</th><th class="r">Plan</th><th class="r">Actual</th><th class="r">Variance</th><th class="r">Cum. plan</th><th class="r">Cum. actual</th><th class="r">Cum. %</th><th>Remarks</th></tr></thead>
+    <tbody>${hours.map(h => { cp += h.plan; ca += h.actual; return `<tr><td class="num">${esc(h.slot)}</td><td class="r num">${fmt(h.plan)}</td><td class="r num">${fmt(h.actual)}</td><td class="r num">${deltaSpan(h.actual - h.plan)}</td><td class="r num">${fmt(cp)}</td><td class="r num">${fmt(ca)}</td><td class="r">${statusPill(pct(ca, cp))}</td><td>${esc(h.remarks.join('; '))}</td></tr>`; }).join('') || `<tr><td colspan="8" class="empty">No PCS record for ${date ? dowDate(date) : 'this date'}.</td></tr>`}</tbody>`;
+}
+
+/* ---------------- Records ---------------- */
+function renderRecords() {
+  const rows = S.records.slice().sort((a, b) => b.date.localeCompare(a.date) || a.line.localeCompare(b.line));
+  $('#recHint').textContent = `${rows.length} records · ${$('#fFrom').value} to ${$('#fTo').value}`;
+  $('#tblRecords').innerHTML = `<thead><tr><th>Date</th><th>Line</th><th>Shift</th><th>Part</th><th class="r">Plan</th><th class="r">Actual</th><th class="r">Achievement</th><th>Source</th><th></th></tr></thead>
+    <tbody>${rows.map(r => `<tr data-id="${esc(r.id)}"><td>${dowDate(r.date)}</td><td><b>${esc(r.line)}</b></td><td>${esc(r.shift)}</td><td>${esc(r.partNo)}</td><td class="r num">${fmt(r.dailyPlan)}</td><td class="r num">${fmt(r.totalActual)}</td><td class="r">${statusPill(pct(r.totalActual, r.dailyPlan))}</td><td>${r.source === 'scan' ? 'Scan' : r.source === 'demo' ? 'Sample' : 'Manual'}</td>
+      <td class="r"><button class="btn small ghost" data-act="view">Hours</button><button class="btn small ghost danger" data-act="del">Delete</button></td></tr>`).join('') || '<tr><td colspan="9" class="empty">No records in this date range.</td></tr>'}</tbody>`;
+}
+$('#tblRecords').addEventListener('click', async ev => {
+  const b = ev.target.closest('button'); if (!b) return;
+  const tr = b.closest('tr'), id = tr.dataset.id, rec = S.records.find(r => r.id === id);
+  if (b.dataset.act === 'view') {
+    const next = tr.nextElementSibling;
+    if (next && next.classList.contains('detail')) { next.remove(); return; }
+    const d = document.createElement('tr'); d.className = 'detail';
+    d.innerHTML = `<td colspan="9"><div class="table-wrap"><table><thead><tr><th>Hour</th><th class="r">Plan</th><th class="r">Actual</th><th class="r">Reject</th><th>Remarks</th></tr></thead><tbody>${rec.hourly.map(h => `<tr><td class="num">${esc(h.slot)}</td><td class="r num">${fmt(h.plan)}</td><td class="r num">${fmt(h.actual)}</td><td class="r num">${fmt(h.reject)}</td><td>${esc(h.remark)}</td></tr>`).join('')}</tbody></table></div>
+      <div style="margin-top:8px;color:var(--ink-2);font-size:12px">Supervisor: ${esc(rec.supervisor || '—')} · Downtime ${fmt(rec.downtimeMin)} min · Part ${esc(rec.partNo)} ${esc(rec.partName)}</div></td>`;
+    tr.after(d);
+  } else if (b.dataset.act === 'del') {
+    if (!b.dataset.armed) { b.dataset.armed = '1'; b.textContent = 'Confirm delete'; setTimeout(() => { if (b.isConnected) { delete b.dataset.armed; b.textContent = 'Delete'; } }, 3000); return; }
+    try { await Store().remove(id); toast('Record deleted'); await refresh(); } catch (e) { toast('Delete failed: ' + e.message); }
+  }
+});
+
+/* ---------------- Scan flow ---------------- */
+async function fileToJpeg(file, max = 1600) {
+  const url = URL.createObjectURL(file);
+  try {
+    const img = new Image();
+    await new Promise((res, rej) => { img.onload = res; img.onerror = () => rej(new Error('This file is not an image the browser can open.')); img.src = url; });
+    const s = Math.min(1, max / Math.max(img.naturalWidth, img.naturalHeight));
+    const c = document.createElement('canvas'); c.width = Math.round(img.naturalWidth * s); c.height = Math.round(img.naturalHeight * s);
+    c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+    return c.toDataURL('image/jpeg', 0.85);
+  } finally { URL.revokeObjectURL(url); }
+}
+function setImage(dataUrl, isSample) {
+  S.scan.image = dataUrl; S.scan.isSample = isSample;
+  const p = $('#preview'); p.src = dataUrl; p.hidden = false;
+  $('#btnExtract').disabled = false;
+}
+async function onFile(file) {
+  if (!file) return;
+  try { setImage(await fileToJpeg(file), false); } catch (e) { toast(e.message); }
+}
+$('#fileCam').addEventListener('change', e => onFile(e.target.files[0]));
+$('#fileGal').addEventListener('change', e => onFile(e.target.files[0]));
+$('#btnSample').addEventListener('click', async () => setImage(await drawSampleForm(), true));
+const drop = $('#drop');
+['dragenter', 'dragover'].forEach(t => drop.addEventListener(t, e => { e.preventDefault(); drop.classList.add('drag'); }));
+['dragleave', 'drop'].forEach(t => drop.addEventListener(t, e => { e.preventDefault(); drop.classList.remove('drag'); }));
+drop.addEventListener('drop', e => onFile(e.dataTransfer.files[0]));
+
+$('#btnExtract').addEventListener('click', async () => {
+  if (!S.scan.image) return;
+  const btn = $('#btnExtract'); btn.disabled = true;
+  $('#extractProgress').hidden = false;
+  $('#extractMsg').textContent = S.live ? 'Gemini is reading the form…' : 'Gemini is reading the form… (demo simulation)';
+  try {
+    const data = await Store().extract(S.scan.image, S.scan.isSample);
+    fillDraft(data);
+  } catch (e) { toast('Extraction failed: ' + e.message); }
+  finally { btn.disabled = false; $('#extractProgress').hidden = true; }
+});
+
+function fillDraft(d) {
+  S.scan.draft = d;
+  $('#reviewEmpty').hidden = true; $('#reviewBody').hidden = false;
+  $('#dDate').value = /^\d{4}-\d{2}-\d{2}$/.test(d.date) ? d.date : toISO(new Date());
+  $('#dShift').value = d.shift === 'Night' ? 'Night' : 'Day';
+  $('#dLine').value = d.line || ''; $('#dPartNo').value = d.partNo || ''; $('#dPartName').value = d.partName || '';
+  $('#dSupervisor').value = d.supervisor || ''; $('#dDailyPlan').value = d.dailyPlan || ''; $('#dDowntime').value = d.downtimeMin || 0;
+  $('#confLabel').textContent = typeof d.confidence === 'number' ? `Gemini confidence ${(d.confidence * 100).toFixed(0)}%` : '';
+  const w = (d.warnings || []).filter(Boolean);
+  $('#reviewNotices').innerHTML = w.length ? `<div class="notice warn"><span>▲</span><div><b>Check these before saving</b><ul>${w.map(x => `<li>${esc(x)}</li>`).join('')}</ul></div></div>` : '';
+  renderHourEdit(d.hourly && d.hourly.length ? d.hourly : SLOTS_DAY.map(slot => ({ slot, plan: 0, actual: 0, reject: 0, remark: '' })));
+  if (window.innerWidth < 800) $('#reviewPanel').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+function renderHourEdit(rows) {
+  $('#hourEdit').innerHTML = `<thead><tr><th>Hour</th><th class="r">Plan</th><th class="r">Actual</th><th class="r">Reject</th><th>Remarks</th><th></th></tr></thead>
+    <tbody>${rows.map(h => hourRow(h)).join('')}</tbody><tfoot><tr><td>Total</td><td class="r num" id="tPlan"></td><td class="r num" id="tAct"></td><td class="r num" id="tRej"></td><td id="tPct"></td><td></td></tr></tfoot>`;
+  updateTotals();
+}
+function hourRow(h) {
+  return `<tr><td><input class="slot num" value="${esc(h.slot)}" aria-label="Hour"></td>
+    <td><input class="plan num" type="number" min="0" inputmode="numeric" value="${h.plan ?? ''}" aria-label="Plan"></td>
+    <td><input class="actual num" type="number" min="0" inputmode="numeric" value="${h.actual ?? ''}" aria-label="Actual"></td>
+    <td><input class="reject num" type="number" min="0" inputmode="numeric" value="${h.reject ?? ''}" aria-label="Reject"></td>
+    <td><input class="remark" value="${esc(h.remark || '')}" aria-label="Remarks"></td>
+    <td><button class="btn small ghost danger" data-rm aria-label="Remove hour">✕</button></td></tr>`;
+}
+function readHours() {
+  return $$('#hourEdit tbody tr').map(tr => ({ slot: $('.slot', tr).value, plan: +$('.plan', tr).value || 0, actual: +$('.actual', tr).value || 0, reject: +$('.reject', tr).value || 0, remark: $('.remark', tr).value }));
+}
+function updateTotals() {
+  const h = readHours(); if (!$('#tPlan')) return;
+  const p = h.reduce((s, x) => s + x.plan, 0), a = h.reduce((s, x) => s + x.actual, 0);
+  $('#tPlan').textContent = fmt(p); $('#tAct').textContent = fmt(a); $('#tRej').textContent = fmt(h.reduce((s, x) => s + x.reject, 0));
+  $('#tPct').innerHTML = p ? statusPill(pct(a, p)) : '';
+}
+$('#hourEdit').addEventListener('input', updateTotals);
+$('#hourEdit').addEventListener('click', e => { if (e.target.closest('[data-rm]')) { e.target.closest('tr').remove(); updateTotals(); } });
+$('#btnAddHour').addEventListener('click', () => {
+  const rows = readHours(); const lastSlot = rows.length ? rows[rows.length - 1].slot : '07:00-08:00';
+  const m = lastSlot.match(/(\d{1,2}):(\d{2})\s*$/); let next = '';
+  if (m) { const hh = (+m[1] + 1) % 24; next = `${m[1].padStart(2, '0')}:${m[2]}-${String(hh).padStart(2, '0')}:${m[2]}`; }
+  $('#hourEdit tbody').insertAdjacentHTML('beforeend', hourRow({ slot: next, plan: rows.length ? rows[rows.length - 1].plan : 0, actual: '', reject: '', remark: '' }));
+  updateTotals();
+});
+$('#btnDiscard').addEventListener('click', resetScan);
+function resetScan() {
+  S.scan = { image: null, isSample: false, draft: null };
+  $('#preview').hidden = true; $('#preview').removeAttribute('src'); $('#btnExtract').disabled = true;
+  $('#reviewBody').hidden = true; $('#reviewEmpty').hidden = false; $('#confLabel').textContent = '';
+  $('#fileCam').value = ''; $('#fileGal').value = '';
+}
+$('#btnSave').addEventListener('click', async () => {
+  const hourly = readHours();
+  if (!$('#dLine').value.trim()) { toast('Fill in the line before saving.'); $('#dLine').focus(); return; }
+  if (!hourly.length) { toast('Add at least one hour row.'); return; }
+  const rec = {
+    date: $('#dDate').value, shift: $('#dShift').value, line: $('#dLine').value.trim(), partNo: $('#dPartNo').value,
+    partName: $('#dPartName').value, supervisor: $('#dSupervisor').value, dailyPlan: +$('#dDailyPlan').value || 0,
+    downtimeMin: +$('#dDowntime').value || 0, hourly, source: S.scan.image ? 'scan' : 'manual',
+  };
+  const btn = $('#btnSave'); btn.disabled = true;
+  try {
+    const saved = await Store().add(rec);
+    toast(`Saved ${saved.line} · ${shortDate(saved.date)} · ${fmt(saved.totalActual)} pcs`);
+    resetScan();
+    if (saved.date < $('#fFrom').value || saved.date > $('#fTo').value) setRange(14);
+    await refresh();
+    $('#hDate').value = saved.date; $('#hLine').value = S.lines.includes(saved.line) ? saved.line : 'all';
+    renderHourly();
+    showView('dashboard');
+  } catch (e) { toast('Save failed: ' + e.message); }
+  finally { btn.disabled = false; }
+});
+
+/* ---------------- Settings ---------------- */
+$('#sApi').value = Settings.apiBase; $('#sToken').value = Settings.token; $('#sDemo').checked = !!Settings.forceDemo;
+$('#btnSaveSettings').addEventListener('click', async () => {
+  Settings.apiBase = $('#sApi').value.trim(); Settings.token = $('#sToken').value.trim(); Settings.forceDemo = $('#sDemo').checked;
+  store(SETTINGS_KEY, Settings);
+  await detectMode(); await refresh();
+  toast(S.live ? 'Connected to Worker' : 'Running in demo mode');
+});
+$('#btnResetDemo').addEventListener('click', async () => { DemoStore.reset(); if (!S.live) await refresh(); toast('Demo data reset'); });
+
+/* ---------------- Navigation & boot ---------------- */
+function showView(v) {
+  $$('.tabs button').forEach(b => b.setAttribute('aria-selected', String(b.dataset.view === v)));
+  $$('section.view').forEach(s => (s.hidden = s.id !== 'view-' + v));
+  if (v === 'dashboard') renderDashboard();
+  if (v === 'records') renderRecords();
+  store(SETTINGS_KEY + '.view', v);
+}
+$$('.tabs button').forEach(b => b.addEventListener('click', () => showView(b.dataset.view)));
+$$('#presets .btn').forEach(b => b.addEventListener('click', async () => { setRange(b.dataset.days === 'mtd' ? 'mtd' : +b.dataset.days); await refresh(); }));
+['#fFrom', '#fTo'].forEach(id => $(id).addEventListener('change', async () => { $$('#presets .btn').forEach(b => b.classList.remove('on')); await refresh(); }));
+['#fLine', '#fShift'].forEach(id => $(id).addEventListener('change', () => { $('#hLine').value = $('#fLine').value; renderDashboard(); }));
+['#hDate', '#hLine'].forEach(id => $(id).addEventListener('change', renderHourly));
+
+async function refresh() {
+  await loadRecords();
+  if (!$('#view-dashboard').hidden) renderDashboard();
+  if (!$('#view-records').hidden) renderRecords();
+}
+let rz; window.addEventListener('resize', () => { clearTimeout(rz); rz = setTimeout(() => { if (!$('#view-dashboard').hidden) renderDashboard(); }, 150); });
+
+(async function boot() {
+  const r = store(SETTINGS_KEY + '.range');
+  setRange(r === 'mtd' ? 'mtd' : [7, 14, 30].includes(r) ? r : 14);
+  await detectMode();
+  await loadRecords();
+  const v = store(SETTINGS_KEY + '.view');
+  showView(['dashboard', 'scan', 'records', 'settings'].includes(v) ? v : 'dashboard');
+})();
+</script>
+</body>
+</html>
