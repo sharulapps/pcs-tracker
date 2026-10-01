@@ -20,6 +20,7 @@ const env = {
   FIREBASE_PRIVATE_KEY: pem, APP_TOKEN: 'secret', PLANTS: 'M1,M2',
 };
 const docs = new Map();
+let lastExtractPrompt = '';
 const calls = [];
 globalThis.fetch = async (url, init = {}) => {
   calls.push(url);
@@ -40,6 +41,7 @@ globalThis.fetch = async (url, init = {}) => {
     if (init.headers['x-goog-api-key'] === 'bad') return reply({ error: { status: 'INVALID_ARGUMENT', message: 'API key not valid' } }, 400);
     const body = JSON.parse(init.body);
     if (body.contents[0].parts.length > 1) assert.equal(body.contents[0].parts[1].inline_data.data, 'AAAA');
+    if (body.contents[0].parts.length > 1) lastExtractPrompt = body.contents[0].parts[0].text;
     if (body.contents[0].parts.length === 1) {
       assert.match(body.contents[0].parts[0].text, /Bahasa Melayu|English/);
       return reply({ candidates: [{ content: { parts: [{ text: JSON.stringify({ headline: 'Output 98.7% daripada plan.', overview: 'Ringkasan.',
@@ -295,4 +297,12 @@ test('location block: clear message and health check', async () => {
   assert.deepEqual(h.check.egress, { colo: 'SIN', loc: 'MY' }); assert.equal(h.check.gemini, 'ok');
   const hk = await (await worker.fetch(new Request('https://x.test/api/health?check=1'), { ...env, GEMINI_API_KEY: 'hk' })).json();
   assert.match(hk.check.gemini, /^Blocked by location/);
+});
+
+test('extract passes the plan model names to Gemini', async () => {
+  const r = await call('/api/extract', { method: 'POST', body: JSON.stringify({ mimeType: 'image/jpeg', imageBase64: 'AAAA', knownModels: ['P9 | 3MOX OUTER', 'P11 | SAGA MC3 HI'] }) });
+  assert.equal(r.status, 200);
+  assert.match(lastExtractPrompt, /P9 \| 3MOX OUTER/); assert.match(lastExtractPrompt, /exactly as in this list/);
+  await call('/api/extract', { method: 'POST', body: JSON.stringify({ mimeType: 'image/jpeg', imageBase64: 'AAAA' }) });
+  assert.doesNotMatch(lastExtractPrompt, /this plant's production plan/);
 });

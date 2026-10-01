@@ -693,8 +693,16 @@ async function extractPcs(env, body) {
   if (!/^image\//.test(mimeType)) throw httpError('Only images are accepted', 400);
   if (!imageBase64) throw httpError('imageBase64 is missing', 400);
   if (imageBase64.length * 0.75 > MAX_IMAGE_BYTES) throw httpError('Image is larger than 8 MB', 413);
+  const known = (Array.isArray(body.knownModels) ? body.knownModels : []).slice(0, 300).map(m => str(m, 160)).filter(Boolean);
+  const prompt = known.length ? `${PROMPT}
+
+Machines and models in this plant's production plan this month ("machine | model"):
+${known.join('\n')}
+If the Station on the form is one of these with small spelling or handwriting differences (for example "30MX" for "3MOX",
+"W/ARCH" for "WHEEL ARCH", a missing "(2 CAV)"), write machine and model exactly as in this list.
+If it is clearly not in the list, write it as on the form.` : PROMPT;
   const { data: raw, model } = await callGemini(env,
-    [{ text: PROMPT }, { inline_data: { mime_type: mimeType, data: imageBase64 } }], PCS_SCHEMA,
+    [{ text: prompt }, { inline_data: { mime_type: mimeType, data: imageBase64 } }], PCS_SCHEMA,
     'Gemini did not return readable data. Retake the photo with the whole form in frame.');
   const hr = v => (Number.isInteger(Number(v)) && Number(v) >= 0 && Number(v) <= 23 ? Number(v) : undefined);
   return { ...normalizePcsForm(raw, { dayStart: hr(body.dayStart) ?? 8, nightStart: hr(body.nightStart) ?? 20 }), aiModel: model };

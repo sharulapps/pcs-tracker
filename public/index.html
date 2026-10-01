@@ -938,7 +938,12 @@ const LiveStore = {
   async remove(rec) { await api(`/api/records/${encodeURIComponent(rec._id || rec.id)}?plant=${encodeURIComponent(rec.plant)}`, { method: 'DELETE' }); },
   async extract(imageDataUrl) {
     const [, mime, b64] = imageDataUrl.match(/^data:([^;]+);base64,(.*)$/) || [];
-    return (await api('/api/extract', { method: 'POST', body: JSON.stringify({ mimeType: mime, imageBase64: b64, dayStart: Settings.dayStart, nightStart: Settings.nightStart }) })).data;
+    let knownModels = [];
+    try {
+      const plans = await this.listPlansFor($('#dPlant').value || S.plants[0].code, monthStart(), monthEnd(curMonth()));
+      knownModels = [...new Set(plans.map(p => `${p.machine} | ${p.model}`))].slice(0, 300);
+    } catch (e) { /* extraction still works without the list */ }
+    return (await api('/api/extract', { method: 'POST', body: JSON.stringify({ mimeType: mime, imageBase64: b64, dayStart: Settings.dayStart, nightStart: Settings.nightStart, knownModels }) })).data;
   },
 };
 
@@ -1093,15 +1098,36 @@ function setMonth(ym, date) {
  */
 const SYN = { HIGH: 'HI', LOW: 'LO', LEFT: 'LH', RIGHT: 'RH' };
 const modelWords = s => String(s ?? '').toUpperCase().split(/[^A-Z0-9]+/).filter(Boolean).map(w => SYN[w] || w).filter(w => !/^\d*CAV$/.test(w));
+/** Characters handwriting and OCR mix up: 0/O, 1/I, 5/S, 8/B. */
+const looks = w => w.replace(/0/g, 'O').replace(/1/g, 'I').replace(/5/g, 'S').replace(/8/g, 'B');
+/** Edit distance with swaps of neighbouring letters (Damerau), stopping early above 1. */
+function within1(a, b) {
+  if (Math.abs(a.length - b.length) > 1) return false;
+  const d = Array.from({ length: a.length + 1 }, (_, i) => [i, ...Array(b.length).fill(0)]);
+  for (let j = 1; j <= b.length; j++) d[0][j] = j;
+  for (let i = 1; i <= a.length; i++) for (let j = 1; j <= b.length; j++) {
+    d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+    if (i > 1 && j > 1 && a[i - 1] === b[j - 2] && a[i - 2] === b[j - 1]) d[i][j] = Math.min(d[i][j], d[i - 2][j - 2] + 1);
+  }
+  return d[a.length][b.length] <= 1;
+}
+/** Same word, a start of it (W → WHEEL), or, for words of 4+ characters, a likely misread ("30MX" → "3MOX"). */
+function wordMatch(x, y) {
+  if (x === y || (x.length < y.length && y.startsWith(x))) return 'exact';
+  if (x.length >= 4 && y.length >= 4 && (looks(x) === looks(y) || within1(looks(x), looks(y)))) return 'fuzzy';
+  return '';
+}
 function modelMatch(a, b) {
   const ka = key(a), kb = key(b);
   if (!ka || !kb) return 0;
   if (ka === kb) return 3;
   if (ka.includes(kb) || kb.includes(ka)) return 2;
   const wa = modelWords(a), wb = modelWords(b);
-  if (!wa.length || !wb.length || wa[0] !== wb[0]) return 0;
-  const inside = (xs, ys) => xs.every(x => ys.some(y => y === x || (x.length < y.length && y.startsWith(x))));
-  return inside(wa, wb) || inside(wb, wa) ? 1 : 0;
+  if (!wa.length || !wb.length || !wordMatch(wa[0], wb[0])) return 0;
+  let fuzzy = false;
+  const inside = (xs, ys) => xs.every(x => ys.some(y => { const m = wordMatch(x, y); if (m === 'fuzzy') fuzzy = true; return !!m; }));
+  if (inside(wa, wb) || inside(wb, wa)) return fuzzy ? 0.5 : 1;
+  return 0;
 }
 /** Best plan entry for a model among candidates; null when nothing matches or two match equally well. */
 function bestPlanMatch(model, cands) {
