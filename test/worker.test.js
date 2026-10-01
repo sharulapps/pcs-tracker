@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { generateKeyPairSync } from 'node:crypto';
-import worker, { toFs, fromFs, sanitizeRecord, sanitizePlanEntry, normalizePcsForm, to24h } from '../worker/index.js';
+import worker, { toFs, fromFs, sanitizeRecord, sanitizePlanEntry, normalizePcsForm, to24h, geminiKeys } from '../worker/index.js';
 
 const { privateKey } = generateKeyPairSync('rsa', { modulusLength: 2048 });
 const pem = privateKey.export({ type: 'pkcs8', format: 'pem' }).replace(/\n/g, '\\n');
@@ -19,6 +19,8 @@ globalThis.fetch = async (url, init = {}) => {
     return reply({ access_token: 'tok', expires_in: 3600 });
   }
   if (url.includes('generativelanguage')) {
+    if (init.headers['x-goog-api-key'] === 'limited') return reply({ error: { status: 'RESOURCE_EXHAUSTED', message: 'Quota exceeded' } }, 429);
+    if (init.headers['x-goog-api-key'] === 'bad') return reply({ error: { status: 'INVALID_ARGUMENT', message: 'API key not valid' } }, 400);
     const body = JSON.parse(init.body);
     assert.equal(body.contents[0].parts[1].inline_data.data, 'AAAA');
     const form = { station: 'P11 SAGA MC3 HI', dateText: '30.9.2026', shift: 'DAY', rows: [{ from: '8', to: '9', plan: 22, planCum: 22, actual: 20, actualCum: 20 }], confidence: 0.9, warnings: [] };
@@ -157,4 +159,18 @@ test('normalizePcsForm reads the real P12 night form', () => {
   assert.equal(d.okQty, 660); assert.equal(d.operator, 'Vaurz');
   assert.ok(d.warnings.some(w => /2\.3-3/.test(w)), 'warns about row 2.3-3');
   assert.ok(d.warnings.some(w => /OK total on the form is 660/.test(w)), 'warns OK 660 vs 600');
+});
+
+test('Gemini key rotation', async () => {
+  assert.deepEqual(geminiKeys({ GEMINI_API_KEY: 'a, b', GEMINI_API_KEY_3: 'c', GEMINI_API_KEY_2: 'a' }), ['a', 'b', 'c']);
+  const ask = e => worker.fetch(new Request('https://x.test/api/extract', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ mimeType: 'image/jpeg', imageBase64: 'AAAA' }) }), { GEMINI_API_KEY: e });
+  for (let i = 0; i < 3; i++) {
+    const r = await ask('limited,g-key'); // whichever key starts, the limited one is skipped
+    assert.equal(r.status, 200); assert.equal((await r.json()).data.machine, 'P11');
+  }
+  const all = await ask('limited');
+  assert.equal(all.status, 429); assert.match((await all.json()).error, /at its limit/);
+  const bad = await ask('bad,g-key');
+  assert.ok([200, 502].includes(bad.status), 'a non-quota error is reported, not rotated past');
 });

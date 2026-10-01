@@ -91,6 +91,13 @@ Settings → *Reset demo data* restores the samples.
    The Worker serves `public/` and `/api/*` on the same URL. Opening it switches the app to **Live · Firestore**.
    If you set `APP_TOKEN`, enter it once under Settings on each device.
 
+### Several Gemini keys
+
+Put several keys in `GEMINI_API_KEY` separated by commas, or add `GEMINI_API_KEY_2` … `GEMINI_API_KEY_5` (type Secret).
+Keys are used in turn; when one hits a rate limit or its quota (429 / RESOURCE_EXHAUSTED) or Gemini is overloaded, the next key is tried.
+Gemini quota is counted per Google Cloud project, so extra keys only add capacity when each comes from a different project.
+`/api/health` shows how many keys are configured (`geminiKeys`), never the keys themselves.
+
 Local dev: copy `.dev.vars.example` to `.dev.vars`, fill it in, run `npx wrangler dev`.
 
 ## Data model

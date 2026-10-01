@@ -14,7 +14,9 @@
  * Everything else is served from ./public (static assets).
  *
  * Secrets (wrangler secret put ...):
- *   GEMINI_API_KEY          Google AI Studio key
+ *   GEMINI_API_KEY          Google AI Studio key; several keys may be given, separated by commas
+ *   GEMINI_API_KEY_2 … _5   optional extra keys. On a rate limit or used-up quota the next key is tried.
+ *                           Quota is per Google Cloud project, so extra keys only help when they come from other projects.
  *   FIREBASE_PROJECT_ID     e.g. pcs-tracker-12345
  *   FIREBASE_CLIENT_EMAIL   service account email
  *   FIREBASE_PRIVATE_KEY    service account private key (PEM, \n escaped is fine)
@@ -49,7 +51,8 @@ export default {
           ...(Object.keys(check).length ? { check } : {}),
           ...(missing.length ? { missing } : {}),
           ok: true,
-          gemini: !!env.GEMINI_API_KEY,
+          gemini: geminiKeys(env).length > 0,
+          geminiKeys: geminiKeys(env).length,
           firestore: !!(env.FIREBASE_PROJECT_ID && env.FIREBASE_CLIENT_EMAIL && env.FIREBASE_PRIVATE_KEY),
           model: env.GEMINI_MODEL || 'gemini-2.5-flash',
         });
@@ -354,8 +357,21 @@ export function normalizePcsForm(raw, { dayStart = 8, nightStart = 20 } = {}) {
   };
 }
 
+/** All configured Gemini keys: GEMINI_API_KEY (comma separated allowed) plus GEMINI_API_KEY_2 … _5. */
+export function geminiKeys(env) {
+  const list = [env.GEMINI_API_KEY, env.GEMINI_API_KEY_2, env.GEMINI_API_KEY_3, env.GEMINI_API_KEY_4, env.GEMINI_API_KEY_5]
+    .flatMap(v => String(v ?? '').split(/[\s,]+/)).filter(Boolean);
+  return [...new Set(list)];
+}
+let keyCursor = 0; // round-robin start, per Worker instance
+
+/** Rate limit, used-up quota or Gemini overloaded: worth trying the next key. */
+const isRetryable = (status, msg) => status === 429 || status === 503
+  || (status === 403 && /quota|exhausted|rate/i.test(msg)) || /RESOURCE_EXHAUSTED/i.test(msg);
+
 async function extractPcs(env, body) {
-  if (!env.GEMINI_API_KEY) throw httpError('GEMINI_API_KEY is not set on the Worker', 503);
+  const keys = geminiKeys(env);
+  if (!keys.length) throw httpError('GEMINI_API_KEY is not set on the Worker', 503);
   const mimeType = str(body?.mimeType, 40) || 'image/jpeg';
   const imageBase64 = String(body?.imageBase64 || '');
   if (!/^image\//.test(mimeType)) throw httpError('Only images are accepted', 400);
@@ -363,16 +379,28 @@ async function extractPcs(env, body) {
   if (imageBase64.length * 0.75 > MAX_IMAGE_BYTES) throw httpError('Image is larger than 8 MB', 413);
 
   const model = env.GEMINI_MODEL || 'gemini-2.5-flash';
-  const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'x-goog-api-key': env.GEMINI_API_KEY },
-    body: JSON.stringify({
-      contents: [{ role: 'user', parts: [{ text: PROMPT }, { inline_data: { mime_type: mimeType, data: imageBase64 } }] }],
-      generationConfig: { temperature: 0, responseMimeType: 'application/json', responseSchema: PCS_SCHEMA },
-    }),
+  const payload = JSON.stringify({
+    contents: [{ role: 'user', parts: [{ text: PROMPT }, { inline_data: { mime_type: mimeType, data: imageBase64 } }] }],
+    generationConfig: { temperature: 0, responseMimeType: 'application/json', responseSchema: PCS_SCHEMA },
   });
-  const out = await res.json().catch(() => ({}));
-  if (!res.ok) throw httpError('Gemini error: ' + (out.error?.message || res.status), 502);
+  const start = keyCursor++ % keys.length;
+  let out = null, lastErr = '';
+  for (let i = 0; i < keys.length; i++) {
+    const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-goog-api-key': keys[(start + i) % keys.length] },
+      body: payload,
+    });
+    const body = await res.json().catch(() => ({}));
+    if (res.ok) { out = body; break; }
+    lastErr = body.error?.message || String(res.status);
+    if (!isRetryable(res.status, `${body.error?.status || ''} ${lastErr}`)) throw httpError('Gemini error: ' + lastErr, 502);
+  }
+  if (!out) {
+    throw httpError(keys.length > 1
+      ? `All ${keys.length} Gemini keys are at their limit. Wait a minute and try again. (${lastErr})`
+      : `Gemini key is at its limit. Wait a minute and try again, or add another key. (${lastErr})`, 429);
+  }
   const text = out.candidates?.[0]?.content?.parts?.map(p => p.text || '').join('') || '';
   let raw;
   try {

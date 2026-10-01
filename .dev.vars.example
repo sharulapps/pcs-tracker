@@ -1,5 +1,7 @@
 # Copy to .dev.vars for `npx wrangler dev` (never commit .dev.vars)
 GEMINI_API_KEY=
+# Optional extra keys (or comma-separate them above)
+GEMINI_API_KEY_2=
 FIREBASE_PROJECT_ID=
 FIREBASE_CLIENT_EMAIL=
 FIREBASE_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----\n"
