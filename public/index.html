@@ -338,6 +338,7 @@ code { font-family: var(--font-data); font-size: 12px; background: var(--surface
 </header>
 
 <main>
+  <div class="notice warn" id="setupBanner" hidden></div>
   <!-- DASHBOARD -->
   <section class="view" id="view-dashboard">
     <div class="panel filterbar">
@@ -781,7 +782,16 @@ async function detectMode() {
     } catch (e) { S.health = { error: e.message }; }
   }
   const pill = $('#modePill');
-  pill.textContent = S.live ? 'Live · Firestore' : 'Demo data';
+  const half = !S.live && S.health && S.health.ok; // Worker answers, Firestore not set up
+  pill.textContent = S.live ? 'Live · Firestore' : half ? 'Demo · setup incomplete' : 'Demo data';
+  const banner = $('#setupBanner');
+  banner.hidden = !half;
+  if (half) {
+    const miss = (S.health.missing || []).filter(k => k.startsWith('FIREBASE'));
+    banner.innerHTML = `<span>▲</span><div><b>The Worker is running, but Firestore is not connected, so this is demo data stored in this browser only.</b><br>`
+      + (miss.length ? `Missing on the Worker: <code>${miss.map(esc).join('</code>, <code>')}</code>. ` : '')
+      + `Add them in Cloudflare → Settings → Variables and Secrets with type <b>Secret</b>, then open <code>/api/health?check=1</code> to test.</div>`;
+  }
   pill.classList.toggle('live', S.live);
   const cs = $('#connStatus');
   cs.className = 'status ' + (S.live ? 'good' : 'warn');

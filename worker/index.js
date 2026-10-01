@@ -44,8 +44,10 @@ export default {
           try { await googleAccessToken(env); check.googleAuth = 'ok'; } catch (e) { check.googleAuth = e.message; }
           try { await firestore(env, `/${PLAN_META}?pageSize=1`); check.firestoreRead = 'ok'; } catch (e) { check.firestoreRead = e.message; }
         }
+        const missing = ['GEMINI_API_KEY', 'FIREBASE_PROJECT_ID', 'FIREBASE_CLIENT_EMAIL', 'FIREBASE_PRIVATE_KEY'].filter(k => !env[k]);
         return json(env, {
           ...(Object.keys(check).length ? { check } : {}),
+          ...(missing.length ? { missing } : {}),
           ok: true,
           gemini: !!env.GEMINI_API_KEY,
           firestore: !!(env.FIREBASE_PROJECT_ID && env.FIREBASE_CLIENT_EMAIL && env.FIREBASE_PRIVATE_KEY),
