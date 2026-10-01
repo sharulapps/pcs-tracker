@@ -4,6 +4,12 @@ compatibility_date = "2026-09-01"
 # Keep variables added in the Cloudflare dashboard when deploying from GitHub.
 keep_vars = true
 
+# Run the Worker next to Google Cloud Singapore instead of the visitor's nearest data centre.
+# Gemini refuses requests from some locations ("User location is not supported"); Singapore is supported
+# and is also where the Firestore database lives. Change to e.g. "gcp:us-central1" if needed.
+[placement]
+region = "gcp:asia-southeast1"
+
 # Serves public/index.html; /api/* falls through to the Worker.
 [assets]
 directory = "./public"

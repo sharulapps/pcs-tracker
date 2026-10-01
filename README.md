@@ -127,6 +127,22 @@ Gemini returns a headline, an overview paragraph, 6–12 findings grouped by Out
 It runs only when someone presses the button, and the result is kept per filter selection so re-opening the page does not use quota.
 In demo mode the app writes the summary itself from the same figures and says so.
 
+### Gemini "User location is not supported"
+
+Gemini checks where the request comes from, which is the Cloudflare data centre running the Worker, not the user's own IP.
+Visitors in Malaysia are sometimes served from a data centre in a country Gemini does not support, so the request is refused.
+`wrangler.toml` therefore pins the Worker next to Google Cloud Singapore with a placement hint:
+
+```toml
+[placement]
+region = "gcp:asia-southeast1"
+```
+
+Static files are still served from the nearest data centre; only `/api/*` runs in the pinned location.
+Open `/api/health?check=1` to see `check.egress` (data centre and country the Worker calls out from) and `check.gemini`
+(`ok`, or `Blocked by location: …`). If Singapore is ever refused, change the region to e.g. `gcp:us-central1` and redeploy.
+Cloudflare Workers have no fixed outgoing IP, and Gemini has no IP allow-list, so a fixed IP would not help.
+
 ### Gemini model and fallback
 
 `GEMINI_MODEL` (default `gemini-3.6-flash`) reads the form. When Google answers "high demand" (503) the Worker waits and tries again,

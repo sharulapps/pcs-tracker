@@ -28,6 +28,11 @@ globalThis.fetch = async (url, init = {}) => {
     assert.match(init.body, /assertion=[\w-]+\.[\w-]+\.[\w-]+$/);
     return reply({ access_token: 'tok', expires_in: 3600 });
   }
+  if (url.startsWith('https://generativelanguage.googleapis.com/v1beta/models?')) {
+    return init.headers['x-goog-api-key'] === 'hk'
+      ? reply({ error: { status: 'FAILED_PRECONDITION', message: 'User location is not supported for the API use.' } }, 400)
+      : reply({ models: [] });
+  }
   if (url.includes('generativelanguage')) {
     if (init.headers['x-goog-api-key'] === 'limited') return reply({ error: { status: 'RESOURCE_EXHAUSTED', message: 'Quota exceeded' } }, 429);
     if (init.headers['x-goog-api-key'] === 'busy' || (init.headers['x-goog-api-key'] === 'busymain' && url.includes('gemini-3.6-flash')))
@@ -44,6 +49,7 @@ globalThis.fetch = async (url, init = {}) => {
     const form = { station: 'P11 SAGA MC3 HI', dateText: '30.9.2026', shift: 'DAY', rows: [{ from: '8', to: '9', plan: 22, planCum: 22, actual: 20, actualCum: 20 }], confidence: 0.9, warnings: [] };
     return reply({ candidates: [{ content: { parts: [{ text: JSON.stringify(form) }] } }] });
   }
+  if (url === 'https://cloudflare.com/cdn-cgi/trace') return new Response('fl=1\ncolo=SIN\nloc=MY\n');
   if (url === JWK_URL) return new Response(JSON.stringify({ keys: [jwk] }), { headers: { 'cache-control': 'max-age=3600' } });
   const base = 'https://firestore.googleapis.com/v1/projects/demo-proj/databases/(default)/documents';
   assert.equal(init.headers.Authorization, 'Bearer tok');
@@ -133,7 +139,7 @@ test('plan import replaces the month', async () => {
 
 test('health check=1 signs in and reads Firestore', async () => {
   const h = await (await call('/api/health?check=1', { headers: { 'X-App-Token': '' } })).json();
-  assert.deepEqual(h.check, { googleAuth: 'ok', firestoreRead: 'ok' });
+  assert.equal(h.check.googleAuth, 'ok'); assert.equal(h.check.firestoreRead, 'ok');
   const bad = await (await worker.fetch(new Request('https://x.test/api/health?check=1'), { ...env, FIREBASE_PRIVATE_KEY: 'not a key' })).json();
   assert.match(bad.check.googleAuth, /not a valid private key/);
 });
@@ -281,4 +287,12 @@ test('migrate moves pre-plant data into a plant', async () => {
   const r = await (await call('/api/admin/migrate', { method: 'POST', body: JSON.stringify({ plant: 'M1' }) })).json();
   assert.equal(r.moved.pcs_records, 1);
   assert.ok(docs.has('plants/M1/pcs_records/old-1')); assert.ok(!docs.has('pcs_records/old-1'));
+});
+
+test('location block: clear message and health check', async () => {
+  assert.equal(geminiFailure(400, 'FAILED_PRECONDITION', 'User location is not supported for the API use.'), 'location');
+  const h = await (await worker.fetch(new Request('https://x.test/api/health?check=1'), env)).json();
+  assert.deepEqual(h.check.egress, { colo: 'SIN', loc: 'MY' }); assert.equal(h.check.gemini, 'ok');
+  const hk = await (await worker.fetch(new Request('https://x.test/api/health?check=1'), { ...env, GEMINI_API_KEY: 'hk' })).json();
+  assert.match(hk.check.gemini, /^Blocked by location/);
 });

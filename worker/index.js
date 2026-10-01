@@ -72,6 +72,15 @@ export default {
         if (url.searchParams.has('check')) {
           try { await googleAccessToken(env); check.googleAuth = 'ok'; } catch (e) { check.googleAuth = e.message; }
           try { await firestore(env, `/${CONFIG}?pageSize=1`); check.firestoreRead = 'ok'; } catch (e) { check.firestoreRead = e.message; }
+          check.egress = await egress();
+          const key = geminiKeys(env)[0];
+          if (key) {
+            try {
+              const r = await fetch('https://generativelanguage.googleapis.com/v1beta/models?pageSize=1', { headers: { 'x-goog-api-key': key } });
+              const b = await r.json().catch(() => ({}));
+              check.gemini = r.ok ? 'ok' : `${geminiFailure(r.status, b.error?.status || '', b.error?.message || '') === 'location' ? 'Blocked by location: ' : ''}${b.error?.message || r.status}`;
+            } catch (e) { check.gemini = e.message; }
+          }
         }
         const missing = ['GEMINI_API_KEY', 'FIREBASE_PROJECT_ID', 'FIREBASE_CLIENT_EMAIL', 'FIREBASE_PRIVATE_KEY'].filter(k => !env[k]);
         return json(env, {
@@ -598,12 +607,22 @@ export function geminiModels(env) {
 /** "busy": Google overloaded (503 / UNAVAILABLE / high demand). "quota": rate limit or used-up quota on this key. */
 export function geminiFailure(status, statusText, msg) {
   const t = `${statusText} ${msg}`;
+  if (/location is not supported|FAILED_PRECONDITION.*location|unsupported_country|not available in your (country|region)/i.test(t)) return 'location';
   if (status === 503 || /UNAVAILABLE|high demand|overloaded/i.test(t)) return 'busy';
   if (status === 429 || /RESOURCE_EXHAUSTED/i.test(t) || (status === 403 && /quota|rate/i.test(t))) return 'quota';
   if (status === 404) return 'missing';
   return 'error';
 }
 const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+/** Where this Worker's outgoing requests leave Cloudflare (data centre code and country). */
+async function egress() {
+  try {
+    const t = await (await fetch('https://cloudflare.com/cdn-cgi/trace')).text();
+    const get = k => (t.match(new RegExp(`^${k}=(.*)$`, 'm')) || [])[1] || '';
+    return { colo: get('colo'), loc: get('loc') };
+  } catch { return {}; }
+}
 
 /**
  * Call Gemini with JSON output. Tries each model in turn (main, then fallback); for each model every key.
@@ -640,6 +659,11 @@ async function callGemini(env, parts, schema, unreadable) {
         if (kind === 'missing') {
           if (models.length === 1) throw httpError(`Gemini model "${model}" was not found. Set GEMINI_MODEL in Cloudflare to a current model name. (${lastErr})`, 502);
           continue outer; // try the next model
+        }
+        if (kind === 'location') {
+          const where = await egress();
+          throw httpError(`Gemini refused the request because of the server's location (Cloudflare ${where.colo || '?'}${where.loc ? ', ' + where.loc : ''}). `
+            + 'Check [placement] region in wrangler.toml (e.g. "gcp:asia-southeast1" or "gcp:us-central1") and redeploy. (' + lastErr + ')', 502);
         }
         if (kind === 'error') throw httpError('Gemini error: ' + lastErr, 502);
         if (kind === 'busy') busy = true;
