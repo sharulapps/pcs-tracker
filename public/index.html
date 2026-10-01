@@ -4,6 +4,16 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>PCS Output Tracker</title>
+<meta name="theme-color" content="#061127">
+<meta name="description" content="Production output plan vs actual, from PCS form photos.">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="PCS Output">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+<link rel="icon" href="icons/favicon-32.png" sizes="32x32" type="image/png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@100..125,400..800&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&family=Caveat:wght@500;700&display=swap">
@@ -105,7 +115,7 @@ button, input, select { font: inherit; color: inherit; }
 ::selection { background: var(--accent-wash); }
 
 /* Header */
-.top { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 20; background: color-mix(in srgb, var(--bg) 78%, transparent); backdrop-filter: blur(14px) saturate(140%); -webkit-backdrop-filter: blur(14px) saturate(140%); border-bottom: 1px solid var(--line); }
+.top { position: sticky; top: 0; padding-top: env(safe-area-inset-top, 0px); z-index: 20; background: color-mix(in srgb, var(--bg) 78%, transparent); backdrop-filter: blur(14px) saturate(140%); -webkit-backdrop-filter: blur(14px) saturate(140%); border-bottom: 1px solid var(--line); }
 .top-inner { max-width: 1240px; margin: 0 auto; padding: 12px 16px; display: flex; align-items: center; gap: 12px 20px; flex-wrap: wrap; }
 .brand { display: flex; align-items: center; gap: 12px; min-width: 0; }
 .logo { width: 38px; height: 38px; flex: none; border-radius: 11px; display: grid; place-items: center; background: linear-gradient(145deg, var(--raise), var(--surface)); border: 1px solid var(--line); box-shadow: var(--shadow); }
@@ -120,6 +130,11 @@ button, input, select { font: inherit; color: inherit; }
 .tabs button { background: none; border: 0; padding: 7px 14px; border-radius: 999px; cursor: pointer; color: var(--muted); font-weight: 500; font-size: 13px; white-space: nowrap; transition: color .15s, background .15s; }
 .tabs button:hover { color: var(--ink); }
 .tabs button[aria-selected="true"] { color: var(--accent-ink); background: linear-gradient(180deg, var(--accent-2), var(--accent)); box-shadow: 0 4px 14px -6px var(--accent); }
+.tabs .ti, .tabs .tl-short { display: none; }
+.ti { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.install-btn svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.install-btn { border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); color: var(--accent-2); background: var(--accent-wash); }
+.update-bar { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(22px + env(safe-area-inset-bottom, 0px)); z-index: 60; display: flex; align-items: center; gap: 12px; padding: 8px 8px 8px 16px; border-radius: 999px; background: #ffffff; color: #0b1a37; font-size: 13px; font-weight: 500; box-shadow: 0 18px 40px -14px rgba(0, 4, 18, 0.8); white-space: nowrap; }
 
 main { max-width: 1240px; margin: 0 auto; padding: 20px 16px 56px; display: flex; flex-direction: column; gap: 18px; }
 section.view { display: flex; flex-direction: column; gap: 18px; }
@@ -377,14 +392,48 @@ code { font-family: var(--font-data); font-size: 12px; background: var(--surface
 .file-row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
 .file-name { font-family: var(--font-data); font-size: 12px; color: var(--ink-2); overflow-wrap: anywhere; }
 
+/* Phone: compact header, app-style bottom navigation, thumb-sized controls. */
 @media (max-width: 720px) {
-  .tabs { margin-left: 0; width: 100%; }
   .brand .sub { display: none; }
+  /* No backdrop-filter here: it would make the header the containing block of the fixed bottom nav. */
+  .top { backdrop-filter: none; -webkit-backdrop-filter: none; background: var(--bg); }
+  .top-inner { padding: 10px 16px; gap: 10px; flex-wrap: nowrap; }
+  .brand { flex: 1 1 auto; }
+  .brand h1 { font-size: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .logo { width: 34px; height: 34px; }
+  .mode-pill { padding: 4px 8px; font-size: 9.5px; letter-spacing: 0.06em; }
+  .install-btn span { display: none; }
+  .tabs {
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 30; margin: 0; max-width: none; border-radius: 0;
+    display: grid; grid-template-columns: repeat(5, 1fr); gap: 0; padding: 6px 6px calc(6px + env(safe-area-inset-bottom, 0px));
+    background: color-mix(in srgb, var(--bg) 97%, transparent); backdrop-filter: blur(16px) saturate(150%); -webkit-backdrop-filter: blur(16px) saturate(150%);
+    border: 0; border-top: 1px solid var(--line); overflow: visible;
+  }
+  .tabs button { display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 6px 2px; border-radius: 12px; font-size: 10.5px; font-weight: 600; min-height: 52px; justify-content: center; -webkit-tap-highlight-color: transparent; }
+  .tabs .ti { display: block; }
+  .tabs .tl-full { display: none; }
+  .tabs .tl-short { display: block; }
+  .tabs button[aria-selected="true"] { color: var(--accent-2); background: var(--accent-wash); box-shadow: none; }
+  /* Scan is the main job on a phone: a raised brass button in the middle. */
+  .tabs #tab-scan .ti { width: 46px; height: 46px; padding: 11px; margin-top: -22px; border-radius: 50%; color: var(--accent-ink); background: linear-gradient(180deg, var(--accent-2), var(--accent)); box-shadow: 0 10px 22px -8px var(--accent), 0 0 0 5px var(--bg); }
+  .tabs #tab-scan[aria-selected="true"] { background: none; }
+  main { padding-bottom: calc(96px + env(safe-area-inset-bottom, 0px)); }
+  .toast, .update-bar { bottom: calc(84px + env(safe-area-inset-bottom, 0px)); }
+  /* Save bar stays in reach while checking a long hourly table. */
+  #reviewBody > .row-actions { position: sticky; bottom: calc(76px + env(safe-area-inset-bottom, 0px)); z-index: 5; margin: 0 -16px -16px; padding: 12px 16px; background: color-mix(in srgb, var(--surface) 92%, transparent); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); border-top: 1px solid var(--line); border-radius: 0 0 var(--r) var(--r); }
+  /* 16px inputs stop iOS zooming into a field when it gets focus. */
+  input:not([type]), input[type="date"], input[type="text"], input[type="number"], input[type="url"], input[type="password"], select { font-size: 16px; min-height: 44px; }
+  .btn { min-height: 44px; }
+  .btn.small { min-height: 36px; }
+  th, td { padding: 9px 10px; }
+  .hour-table input { min-height: 40px; }
+  .hour-table input.slot { min-width: 150px; }
+  .hour-table input:not(.slot):not(.remark) { min-width: 70px; }
 }
 @media (max-width: 560px) {
   .filterbar .filters { display: grid; grid-template-columns: 1fr 1fr; }
   .filterbar .field select, .filterbar .field input { width: 100%; }
-  .filterbar .field:nth-child(4) { grid-column: 1 / -1; }
+  .filterbar .field:nth-child(4) { grid-column: 1 / -1; order: 1; } /* Month | Date, Machine | Shift, then Model full width */
   .panel { padding: 16px; }
   .kpi .v, .fig .v { font-size: 22px; }
   .gauge-center .pctv { font-size: 34px; }
@@ -401,6 +450,7 @@ code { font-family: var(--font-data); font-size: 12px; background: var(--surface
     <p id="gateText">Sign in with your Google account to see plan vs actual for your plants.</p>
     <button class="gbtn" id="btnGoogle" hidden><svg viewBox="0 0 48 48" aria-hidden="true"><path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3C33.7 32.7 29.2 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.8 1.2 7.9 3.1l5.7-5.7C34 6.1 29.3 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.3-.1-2.4-.4-3.5z"/><path fill="#FF3D00" d="M6.3 14.7l6.6 4.8C14.7 15.1 19 12 24 12c3.1 0 5.8 1.2 7.9 3.1l5.7-5.7C34 6.1 29.3 4 24 4 16.3 4 9.7 8.3 6.3 14.7z"/><path fill="#4CAF50" d="M24 44c5.2 0 9.9-2 13.4-5.2l-6.2-5.2C29.2 35.1 26.7 36 24 36c-5.2 0-9.6-3.3-11.3-7.9l-6.5 5C9.5 39.6 16.2 44 24 44z"/><path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.2-2.2 4.2-4.1 5.6l6.2 5.2C37 39.2 44 34 44 24c0-1.3-.1-2.4-.4-3.5z"/></svg>Sign in with Google</button>
     <button class="btn small ghost" id="btnGateOut" hidden>Use another account</button>
+    <button class="btn primary" id="btnGateRetry" hidden>Try again</button>
     <div class="gate-msg" id="gateMsg"></div>
   </div>
 </div>
@@ -416,13 +466,14 @@ code { font-family: var(--font-data); font-size: 12px; background: var(--surface
     </div>
     <div class="plant-pick" id="plantPick" hidden><select id="hPlant" aria-label="Plant"></select></div>
     <span id="modePill" class="mode-pill">Demo data</span>
+    <button class="btn small install-btn" id="btnInstall" hidden title="Install this app on your device"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></svg><span>Install</span></button>
     <button class="user-chip" id="userChip" hidden title="Account"></button>
     <nav class="tabs" role="tablist" aria-label="Sections">
-      <button role="tab" id="tab-dashboard" aria-selected="true" data-view="dashboard">Dashboard</button>
-      <button role="tab" id="tab-plan" aria-selected="false" data-view="plan">Monthly plan</button>
-      <button role="tab" id="tab-scan" aria-selected="false" data-view="scan">Scan PCS form</button>
-      <button role="tab" id="tab-records" aria-selected="false" data-view="records">Records</button>
-      <button role="tab" id="tab-settings" aria-selected="false" data-view="settings">Settings</button>
+      <button role="tab" id="tab-dashboard" aria-selected="true" data-view="dashboard" aria-label="Dashboard"><svg class="ti" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 13a8 8 0 1 1 16 0"/><path d="M12 13l3.5-4"/><path d="M4 19h16"/></svg><span class="tl-full">Dashboard</span><span class="tl-short">Dashboard</span></button>
+      <button role="tab" id="tab-plan" aria-selected="false" data-view="plan" aria-label="Monthly plan"><svg class="ti" viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="5" width="16" height="15" rx="2"/><path d="M4 10h16M9 3v4M15 3v4M8 14h3M8 17h6"/></svg><span class="tl-full">Monthly plan</span><span class="tl-short">Plan</span></button>
+      <button role="tab" id="tab-scan" aria-selected="false" data-view="scan" aria-label="Scan PCS form"><svg class="ti" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8V6a2 2 0 0 1 2-2h2M16 4h2a2 2 0 0 1 2 2v2M20 16v2a2 2 0 0 1-2 2h-2M8 20H6a2 2 0 0 1-2-2v-2"/><circle cx="12" cy="12" r="3.2"/></svg><span class="tl-full">Scan PCS form</span><span class="tl-short">Scan</span></button>
+      <button role="tab" id="tab-records" aria-selected="false" data-view="records" aria-label="Records"><svg class="ti" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 6h12M8 12h12M8 18h12"/><circle cx="4.5" cy="6" r="1"/><circle cx="4.5" cy="12" r="1"/><circle cx="4.5" cy="18" r="1"/></svg><span class="tl-full">Records</span><span class="tl-short">Records</span></button>
+      <button role="tab" id="tab-settings" aria-selected="false" data-view="settings" aria-label="Settings"><svg class="ti" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg><span class="tl-full">Settings</span><span class="tl-short">Settings</span></button>
     </nav>
   </div>
 </header>
@@ -605,6 +656,11 @@ code { font-family: var(--font-data); font-size: 12px; background: var(--surface
 
   <!-- SETTINGS -->
   <section class="view" id="view-settings" hidden>
+    <div class="panel stack" id="installPanel" hidden>
+      <div class="panel-head" style="margin:0"><h2>Install on your phone</h2><span class="hint" id="installState"></span></div>
+      <p class="hint" id="installHow" style="margin:0"></p>
+      <div class="row-actions"><button class="btn primary" id="btnInstall2" hidden>Install app</button></div>
+    </div>
     <div class="grid-2" id="accountGrid" hidden>
       <div class="panel stack">
         <div class="panel-head" style="margin:0"><h2>Your account</h2><span class="role-tag" id="accRole"></span></div>
@@ -663,6 +719,7 @@ code { font-family: var(--font-data); font-size: 12px; background: var(--surface
 </main>
 
 <div id="toast" class="toast" role="status" hidden></div>
+<div id="updateBar" class="update-bar" role="status" hidden><span>A new version is ready.</span><button class="btn small primary" id="btnUpdate">Reload</button></div>
 
 <script src="plan-parser.js"></script>
 <script src="demo-data.js"></script>
@@ -972,10 +1029,15 @@ async function detectMode() {
   S.live = false; S.health = null;
   if (!Settings.forceDemo) {
     try {
-      const ctl = new AbortController(); const t = setTimeout(() => ctl.abort(), 2000);
+      // Short wait for file:// and previews; longer in the installed app, where a slow phone network is likely.
+      const ctl = new AbortController(); const t = setTimeout(() => ctl.abort(), navigator.serviceWorker?.controller ? 9000 : 2000);
       const h = await api('/api/health', { signal: ctl.signal }); clearTimeout(t);
       S.health = h; S.live = !!(h.ok && h.firestore);
-    } catch (e) { S.health = { error: e.message }; }
+    } catch (e) {
+      S.health = { error: e.message };
+      // Opened from the installed app (served by the Worker before) but the network is down: say so instead of falling back to demo data.
+      S.offline = !e.status && (!navigator.onLine || !!navigator.serviceWorker?.controller);
+    }
   }
   const pill = $('#modePill');
   const half = !S.live && S.health && S.health.ok; // Worker answers, Firestore not set up
@@ -1008,7 +1070,10 @@ function gate(state, msg = '') {
   const g = $('#gate'); g.hidden = state === 'off';
   $('#btnGoogle').hidden = state !== 'signin';
   $('#btnGateOut').hidden = state !== 'denied';
-  $('#gateText').textContent = state === 'denied' ? 'This Google account does not have access yet.' : 'Sign in with your Google account to see plan vs actual for your plants.';
+  $('#btnGateRetry').hidden = state !== 'offline';
+  $('#gateText').textContent = state === 'denied' ? 'This Google account does not have access yet.'
+    : state === 'offline' ? 'Cannot reach the server. Check the internet connection and try again.'
+    : 'Sign in with your Google account to see plan vs actual for your plants.';
   const m = $('#gateMsg'); m.textContent = msg; m.className = 'gate-msg' + (state === 'denied' || state === 'error' ? ' err' : '');
 }
 async function initAuth(cfg) {
@@ -2087,10 +2152,59 @@ async function refresh() {
   if (!$('#view-records').hidden) renderRecords();
   if (!$('#view-plan').hidden) renderPlanMeta();
 }
-let rz; window.addEventListener('resize', () => { clearTimeout(rz); rz = setTimeout(() => { if (!$('#view-dashboard').hidden) renderDashboard(); }, 150); });
+// Re-draw charts only when the width changes; on phones the address bar hides on scroll and changes the height only.
+let rz, lastW = innerWidth;
+window.addEventListener('resize', () => { if (innerWidth === lastW) return; lastW = innerWidth; clearTimeout(rz); rz = setTimeout(() => { if (!$('#view-dashboard').hidden) renderDashboard(); }, 150); });
+
+/* Installable app (PWA): service worker, install button, update prompt. */
+const PWA = { prompt: null };
+const standalone = () => matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+const isIOS = () => /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+function renderInstall() {
+  const canPrompt = !!PWA.prompt && !standalone();
+  $('#btnInstall').hidden = !canPrompt;
+  $('#btnInstall2').hidden = !canPrompt;
+  const panel = $('#installPanel');
+  panel.hidden = !('serviceWorker' in navigator) || !S.health?.ok;
+  $('#installState').textContent = standalone() ? 'Installed' : '';
+  $('#installHow').innerHTML = standalone()
+    ? 'You are using the installed app. It opens full screen from your home screen and updates itself after each deploy.'
+    : canPrompt ? 'Add PCS Output to your home screen: it opens full screen like a normal app, straight to the camera for PCS forms.'
+    : isIOS() ? 'iPhone / iPad: open this page in <b>Safari</b>, tap <b>Share</b>, then <b>Add to Home Screen</b>.'
+    : 'Android: open the browser menu <b>⋮</b> and tap <b>Install app</b> (or <b>Add to Home screen</b>).';
+}
+async function doInstall() {
+  if (!PWA.prompt) return;
+  PWA.prompt.prompt();
+  try { await PWA.prompt.userChoice; } catch (e) { /* dismissed */ }
+  PWA.prompt = null; renderInstall();
+}
+window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); PWA.prompt = e; renderInstall(); });
+window.addEventListener('appinstalled', () => { PWA.prompt = null; renderInstall(); toast('App installed'); });
+$('#btnInstall').addEventListener('click', doInstall);
+$('#btnInstall2').addEventListener('click', doInstall);
+$('#btnGateRetry').addEventListener('click', () => location.reload());
+function registerSW() {
+  // Only on the Worker's own site (https), never in demo previews or file://.
+  if (!('serviceWorker' in navigator) || !S.health?.ok || !isSecureContext) return;
+  navigator.serviceWorker.register('sw.js').then(reg => {
+    const offer = w => { if (!w) return; $('#updateBar').hidden = false; $('#btnUpdate').onclick = () => w.postMessage('skipWaiting'); };
+    if (reg.waiting && navigator.serviceWorker.controller) offer(reg.waiting);
+    reg.addEventListener('updatefound', () => {
+      const w = reg.installing;
+      w?.addEventListener('statechange', () => { if (w.state === 'installed' && navigator.serviceWorker.controller) offer(w); });
+    });
+    // Check for a new deploy whenever the app comes back to the foreground.
+    document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') reg.update().catch(() => {}); });
+  }).catch(() => {});
+  let reloaded = false;
+  navigator.serviceWorker.addEventListener('controllerchange', () => { if (!reloaded && !$('#updateBar').hidden) { reloaded = true; location.reload(); } });
+}
 
 (async function boot() {
   await detectMode();
+  if (S.offline && !S.health?.ok) { gate('offline'); window.addEventListener('online', () => location.reload(), { once: true }); return; }
+  registerSW(); renderInstall();
   await initIdentity();
   try { S.metas = await Store().listPlanMeta(); } catch (e) { S.metas = []; }
   // Current month if it has a plan, else the latest imported plan month.
@@ -2100,7 +2214,7 @@ let rz; window.addEventListener('resize', () => { clearTimeout(rz); rz = setTime
   setMonth(ym);
   await loadData();
   S.ready = true;
-  const v = store(SETTINGS_KEY + '.view');
+  const v = new URLSearchParams(location.search).get('view') || store(SETTINGS_KEY + '.view');
   showView(['dashboard', 'plan', 'scan', 'records', 'settings'].includes(v) ? v : 'dashboard');
 })();
 </script>

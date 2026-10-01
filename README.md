@@ -116,6 +116,18 @@ Setup:
 5. Sign in, open Settings → **Plants** to name the plants, and **Users** to add each person with a role and plants.
 6. Data saved before plants existed: Settings → Plants → choose the plant → **Move it into this plant** (once).
 
+### Install on a phone (PWA)
+
+The app is installable: `public/manifest.webmanifest`, `public/sw.js` and the icons in `public/icons/`.
+
+- **Android (Chrome/Edge):** open the Worker URL, then tap **Install** in the header or Settings → *Install on your phone* (or browser menu ⋮ → *Install app*).
+- **iPhone/iPad:** open the URL in **Safari** → Share → **Add to Home Screen**.
+
+The installed app opens full screen with a bottom navigation bar and a raised **Scan** button. The home-screen icon also has *Scan* and *Dashboard* shortcuts (`/?view=scan`).
+The service worker always fetches the app's own files from the network first, so a new deploy shows up on the next open; when a new version arrives while the app is open, a *Reload* bar appears.
+`/api/*` is never cached. Without a connection the installed app says so instead of showing demo data.
+Bump `VERSION` in `sw.js` to clear old caches.
+
 ### AI summary
 
 The dashboard's **AI summary** panel (between the month-to-date cards and the monthly chart) sends the figures already on screen —

@@ -1,0 +1,21 @@
+{
+  "name": "PCS Output Tracker",
+  "short_name": "PCS Output",
+  "description": "Production output plan vs actual, from PCS form photos.",
+  "id": "/",
+  "start_url": "/?source=pwa",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#061127",
+  "theme_color": "#061127",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icons/maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "shortcuts": [
+    { "name": "Scan PCS form", "short_name": "Scan", "url": "/?view=scan", "icons": [{ "src": "icons/icon-192.png", "sizes": "192x192" }] },
+    { "name": "Dashboard", "short_name": "Dashboard", "url": "/?view=dashboard", "icons": [{ "src": "icons/icon-192.png", "sizes": "192x192" }] }
+  ]
+}
