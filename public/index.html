@@ -825,7 +825,14 @@ async function loadData() {
   const from = monthStart(), to = monthEnd(curMonth());
   try {
     [S.records, S.plans, S.metas] = await Promise.all([Store().list(from, to), Store().listPlans(from, to), Store().listPlanMeta()]);
-  } catch (e) { toast('Could not load data: ' + e.message); S.records = []; S.plans = []; }
+    if (S.live) $('#setupBanner').hidden = true;
+  } catch (e) {
+    toast('Could not load data: ' + e.message); S.records = []; S.plans = [];
+    if (S.live) {
+      const b = $('#setupBanner'); b.hidden = false;
+      b.innerHTML = `<span>▲</span><div><b>The Worker could not read Firestore.</b><br>${esc(e.message)}<br>Open <code>/api/health?check=1</code> for details.</div>`;
+    }
+  }
   fillFilterOptions();
 }
 function fillFilterOptions() {
