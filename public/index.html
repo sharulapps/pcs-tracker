@@ -677,14 +677,14 @@ const LiveStore = {
 };
 
 /* ---------------- App state ---------------- */
-const S = { live: false, health: null, records: [], plans: [], metas: [], scan: { image: null, isSample: false }, planImport: null };
+const S = { ready: false, live: false, health: null, records: [], plans: [], metas: [], scan: { image: null, isSample: false }, planImport: null };
 const Store = () => (S.live ? LiveStore : DemoStore);
 
 async function detectMode() {
   S.live = false; S.health = null;
   if (!Settings.forceDemo) {
     try {
-      const ctl = new AbortController(); const t = setTimeout(() => ctl.abort(), 3500);
+      const ctl = new AbortController(); const t = setTimeout(() => ctl.abort(), 2000);
       const h = await api('/api/health', { signal: ctl.signal }); clearTimeout(t);
       S.health = h; S.live = !!(h.ok && h.firestore);
     } catch (e) { S.health = { error: e.message }; }
@@ -749,7 +749,9 @@ function match(x) {
 /* ---------------- Aggregation ---------------- */
 function byDate(plans, recs, from, to) {
   const m = new Map();
-  for (let d = from; d <= to; d = addDays(d, 1)) m.set(d, { date: d, plan: 0, actual: 0, reject: 0, n: 0, pending: 0 });
+  const ok = s => /^\d{4}-\d{2}-\d{2}$/.test(s);
+  // Bounded loop: a blank or invalid date must never spin forever.
+  for (let d = from, i = 0; ok(d) && ok(to) && d <= to && i < 400; d = addDays(d, 1), i++) m.set(d, { date: d, plan: 0, actual: 0, reject: 0, n: 0, pending: 0 });
   plans.forEach(p => { const x = m.get(p.date); if (x) x.plan += p.qty; });
   recs.forEach(r => { const x = m.get(r.date); if (x) { x.actual += r.totalActual; x.reject += r.totalReject; x.n++; } });
   return [...m.values()];
@@ -870,6 +872,7 @@ function cumulativeLines(host, rows, t) {
 
 /* ---------------- Dashboard ---------------- */
 function renderDashboard() {
+  if (!S.ready || !/^\d{4}-\d{2}$/.test(curMonth()) || !asOf()) return;
   const ym = curMonth(), from = monthStart(), to = monthEnd(ym), t = asOf();
   const plans = S.plans.filter(match), recs = S.records.filter(match);
   const days = byDate(plans, recs, from, to);
@@ -1286,6 +1289,7 @@ let rz; window.addEventListener('resize', () => { clearTimeout(rz); rz = setTime
   if (!ym || !/^\d{4}-\d{2}$/.test(ym)) ym = planMonths.includes(t) || !planMonths.length ? t : planMonths.pop();
   setMonth(ym);
   await loadData();
+  S.ready = true;
   const v = store(SETTINGS_KEY + '.view');
   showView(['dashboard', 'plan', 'scan', 'records', 'settings'].includes(v) ? v : 'dashboard');
 })();
