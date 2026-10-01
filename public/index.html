@@ -570,7 +570,7 @@ const deltaSpan = v => `<span class="${v >= 0 ? 'delta-pos' : 'delta-neg'}">${v 
 
 function toast(msg) {
   const t = $('#toast'); t.textContent = msg; t.hidden = false;
-  clearTimeout(toast._t); toast._t = setTimeout(() => (t.hidden = true), 2800);
+  clearTimeout(toast._t); toast._t = setTimeout(() => (t.hidden = true), /fail|could not|error|wrong/i.test(msg) ? 9000 : 2800);
 }
 
 /* ---------------- Settings ---------------- */

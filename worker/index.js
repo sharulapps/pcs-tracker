@@ -2,6 +2,7 @@
  * PCS Output Tracker — Cloudflare Worker
  *
  *   GET    /api/health            which backends are configured
+ *   GET    /api/health?check=1    also signs in to Google and reads Firestore, and reports the error if one fails
  *   POST   /api/extract           { imageBase64, mimeType } -> Gemini -> structured PCS JSON
  *   GET    /api/records?from&to   list PCS records (date range, YYYY-MM-DD)
  *   POST   /api/records           save a reviewed PCS record (one per date/shift/machine/model; re-saving replaces it)
@@ -38,7 +39,13 @@ export default {
 
     try {
       if (url.pathname === '/api/health') {
+        const check = {};
+        if (url.searchParams.has('check')) {
+          try { await googleAccessToken(env); check.googleAuth = 'ok'; } catch (e) { check.googleAuth = e.message; }
+          try { await firestore(env, `/${PLAN_META}?pageSize=1`); check.firestoreRead = 'ok'; } catch (e) { check.firestoreRead = e.message; }
+        }
         return json(env, {
+          ...(Object.keys(check).length ? { check } : {}),
           ok: true,
           gemini: !!env.GEMINI_API_KEY,
           firestore: !!(env.FIREBASE_PROJECT_ID && env.FIREBASE_CLIENT_EMAIL && env.FIREBASE_PRIVATE_KEY),
@@ -260,11 +267,12 @@ async function extractPcs(env, body) {
 /* Firestore (REST + service-account OAuth)                             */
 /* ------------------------------------------------------------------ */
 
-let cachedToken = null; // { token, exp }
+let cachedToken = null; // { who, token, exp }
 
 async function googleAccessToken(env) {
   const now = Math.floor(Date.now() / 1000);
-  if (cachedToken && cachedToken.exp - 60 > now) return cachedToken.token;
+  const who = `${env.FIREBASE_CLIENT_EMAIL}|${env.FIREBASE_PRIVATE_KEY}`;
+  if (cachedToken && cachedToken.who === who && cachedToken.exp - 60 > now) return cachedToken.token;
 
   const b64url = input =>
     btoa(typeof input === 'string' ? input : String.fromCharCode(...new Uint8Array(input)))
@@ -279,8 +287,13 @@ async function googleAccessToken(env) {
   }));
   const pem = env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, '\n')
     .replace(/-----(BEGIN|END) PRIVATE KEY-----/g, '').replace(/\s+/g, '');
-  const der = Uint8Array.from(atob(pem), c => c.charCodeAt(0));
-  const key = await crypto.subtle.importKey('pkcs8', der, { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' }, false, ['sign']);
+  let key;
+  try {
+    const der = Uint8Array.from(atob(pem.replace(/^"|"$/g, '')), c => c.charCodeAt(0));
+    key = await crypto.subtle.importKey('pkcs8', der, { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' }, false, ['sign']);
+  } catch {
+    throw httpError('FIREBASE_PRIVATE_KEY is not a valid private key. Paste the whole private_key value from the service-account JSON, from -----BEGIN PRIVATE KEY----- to -----END PRIVATE KEY-----.', 502);
+  }
   const sig = await crypto.subtle.sign('RSASSA-PKCS1-v1_5', key, new TextEncoder().encode(`${header}.${claims}`));
   const jwt = `${header}.${claims}.${b64url(sig)}`;
 
@@ -290,8 +303,8 @@ async function googleAccessToken(env) {
     body: `grant_type=urn%3Aietf%3Aparams%3Aoauth%3Agrant-type%3Ajwt-bearer&assertion=${jwt}`,
   });
   const out = await res.json();
-  if (!res.ok) throw httpError('Google auth failed: ' + (out.error_description || out.error), 502);
-  cachedToken = { token: out.access_token, exp: now + (out.expires_in || 3600) };
+  if (!res.ok) throw httpError('Google auth failed: ' + (out.error_description || out.error) + ' (check FIREBASE_CLIENT_EMAIL and FIREBASE_PRIVATE_KEY come from the same JSON file)', 502);
+  cachedToken = { who, token: out.access_token, exp: now + (out.expires_in || 3600) };
   return cachedToken.token;
 }
 

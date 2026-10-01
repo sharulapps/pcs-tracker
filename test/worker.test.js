@@ -101,3 +101,10 @@ test('plan import replaces the month', async () => {
   const { metas } = await (await call('/api/plan-meta')).json();
   assert.equal(metas.length, 1); assert.equal(metas[0].revision, '1'); assert.equal(metas[0].total, 330);
 });
+
+test('health check=1 signs in and reads Firestore', async () => {
+  const h = await (await call('/api/health?check=1', { headers: { 'X-App-Token': '' } })).json();
+  assert.deepEqual(h.check, { googleAuth: 'ok', firestoreRead: 'ok' });
+  const bad = await (await worker.fetch(new Request('https://x.test/api/health?check=1'), { ...env, FIREBASE_PRIVATE_KEY: 'not a key' })).json();
+  assert.match(bad.check.googleAuth, /not a valid private key/);
+});
