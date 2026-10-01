@@ -10,7 +10,7 @@ directory = "./public"
 binding = "ASSETS"
 
 [vars]
-GEMINI_MODEL = "gemini-2.5-flash"
+GEMINI_MODEL = "gemini-3.6-flash"
 ALLOWED_ORIGIN = "*"
 
 # Secrets (do not put these in this file):

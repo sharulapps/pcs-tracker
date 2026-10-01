@@ -22,7 +22,7 @@
  *   FIREBASE_PRIVATE_KEY    service account private key (PEM, \n escaped is fine)
  *   APP_TOKEN               optional shared token; clients send it as X-App-Token
  * Vars (wrangler.toml):
- *   GEMINI_MODEL            default "gemini-2.5-flash"
+ *   GEMINI_MODEL            default "gemini-3.6-flash"
  *   ALLOWED_ORIGIN          CORS origin when the page is hosted elsewhere, default "*"
  */
 
@@ -54,7 +54,7 @@ export default {
           gemini: geminiKeys(env).length > 0,
           geminiKeys: geminiKeys(env).length,
           firestore: !!(env.FIREBASE_PROJECT_ID && env.FIREBASE_CLIENT_EMAIL && env.FIREBASE_PRIVATE_KEY),
-          model: env.GEMINI_MODEL || 'gemini-2.5-flash',
+          model: env.GEMINI_MODEL || 'gemini-3.6-flash',
         });
       }
 
@@ -378,10 +378,10 @@ async function extractPcs(env, body) {
   if (!imageBase64) throw httpError('imageBase64 is missing', 400);
   if (imageBase64.length * 0.75 > MAX_IMAGE_BYTES) throw httpError('Image is larger than 8 MB', 413);
 
-  const model = env.GEMINI_MODEL || 'gemini-2.5-flash';
+  const model = env.GEMINI_MODEL || 'gemini-3.6-flash';
   const payload = JSON.stringify({
     contents: [{ role: 'user', parts: [{ text: PROMPT }, { inline_data: { mime_type: mimeType, data: imageBase64 } }] }],
-    generationConfig: { temperature: 0, responseMimeType: 'application/json', responseSchema: PCS_SCHEMA },
+    generationConfig: { responseMimeType: 'application/json', responseSchema: PCS_SCHEMA },
   });
   const start = keyCursor++ % keys.length;
   let out = null, lastErr = '';
@@ -394,6 +394,7 @@ async function extractPcs(env, body) {
     const body = await res.json().catch(() => ({}));
     if (res.ok) { out = body; break; }
     lastErr = body.error?.message || String(res.status);
+    if (res.status === 404) throw httpError(`Gemini model "${model}" was not found. Set GEMINI_MODEL in Cloudflare to a current model name. (${lastErr})`, 502);
     if (!isRetryable(res.status, `${body.error?.status || ''} ${lastErr}`)) throw httpError('Gemini error: ' + lastErr, 502);
   }
   if (!out) {
