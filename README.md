@@ -13,8 +13,8 @@ One sheet per revision (`SEPTEMBER REV 0`, `SEPTEMBER REV 1`, …). The highest 
 |---|---|
 | MACHINE | P9, P10, P11, P12, T13, HP 2, WJ1, … (merged down the group) |
 | MODEL | e.g. `SAGA MC3 HI` |
-| OUTPUT / HOURS | plan rate in pcs/hour; `22 (20)` is read as 22 |
-| OPERATOR | merged down the group |
+| OUTPUT / HOURS | plan rate in pcs/hour; the figure in brackets is ignored (`22 (20)` → 22) |
+| OPERATOR | not imported; the operator is taken from the PCS form |
 | one column per date | plan qty for that day |
 
 Date cells: `D-120` = day shift 120 pcs, `N-200` = night shift 200 pcs, both lines in one cell = both shifts, a plain number = day shift.
@@ -82,7 +82,7 @@ Document ids are `date_shift_machine_model` slugs, so there is one plan entry an
 `pcs_plans`
 ```json
 { "month": "2026-09", "date": "2026-09-30", "shift": "Day", "machine": "P11", "model": "SAGA MC3 HI",
-  "operator": "", "ratePerHour": 22, "qty": 240 }
+  "ratePerHour": 22, "qty": 240 }
 ```
 
 `pcs_records`

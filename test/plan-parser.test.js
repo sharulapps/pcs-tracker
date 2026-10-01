@@ -49,9 +49,9 @@ test('picks the highest REV sheet and extracts entries', () => {
   const hi = p.entries.filter(e => e.model === 'SAGA MC3 HI');
   assert.deepEqual(hi.map(e => [e.date, e.shift, e.qty]), [['2026-09-01', 'Day', 120], ['2026-09-01', 'Night', 200], ['2026-09-02', 'Night', 200]]);
   assert.equal(hi[0].machine, 'P11', 'merged machine cell fills down');
-  assert.equal(hi[0].operator, 'ZIARUL, KHOKAN', 'merged operator cell fills down');
+  assert.equal(hi[0].operator, undefined, 'operator comes from the PCS form, not the plan');
   assert.equal(hi[0].ratePerHour, 22);
-  assert.equal(p.models.find(m => m.model === 'SAGA MC3 HI').rateNote, '22 (20)');
+  assert.equal(p.models.find(m => m.model === 'SAGA MC3 HI').ratePerHour, 22, 'bracket ignored');
   assert.equal(p.entries.filter(e => e.machine === 'HP 2').reduce((s, e) => s + e.qty, 0), 520);
   assert.ok(!p.entries.some(e => e.model === 'INCOMING'), 'stops at NO OF MOLD CHANGE');
   assert.equal(p.warnings.length, 1);

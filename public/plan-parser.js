@@ -5,7 +5,9 @@
  *   A1            title, e.g. "SEPTEMBER 2026 PRODUCTION PLAN - M1"
  *   A3/B3         "REVISION :" / 1
  *   header row    MACHINE | MODEL | OUTPUT / HOURS | OPERATOR | <date> <date> ... | TOTAL
- *   data rows     machine (merged down its group), model, rate, operator (merged), daily qty
+ *   data rows     machine (merged down its group), model, rate, daily qty
+ *                 OUTPUT / HOURS "70 (55)" is read as 70 (bracket ignored).
+ *                 OPERATOR is not imported; the operator comes from the PCS form.
  *   end           "NO OF MOLD CHANGE DAILY" row or the first fully blank row
  *
  * Daily cells:
@@ -56,7 +58,7 @@
     if (!ref) return null;
     const range = XLSX.utils.decode_range(ref);
     const get = (r, c) => ws[XLSX.utils.encode_cell({ r, c })];
-    // Fill merged ranges with their top-left cell (machine and operator columns are merged).
+    // Fill merged ranges with their top-left cell (the machine column is merged).
     const merged = new Map();
     (ws['!merges'] || []).forEach(m => {
       const tl = get(m.s.r, m.s.c);
@@ -99,7 +101,6 @@
       if (t === 'MACHINE') col.machine = c;
       else if (t === 'MODEL') col.model = c;
       else if (t.startsWith('OUTPUT')) col.rate = c;
-      else if (t.startsWith('OPERATOR')) col.operator = c;
       else { const iso = cellISO(cell); if (iso) dateCols.push({ c, date: iso }); }
     }
     if (col.model === undefined || !dateCols.length) throw new Error(`Sheet "${sheetName}" is missing the MODEL column or date columns.`);
@@ -128,8 +129,7 @@
       if (!model) continue;
       const rateRaw = norm(g.cell(r, col.rate)?.v);
       const rate = Number((rateRaw.match(/\d+(\.\d+)?/) || [0])[0]);
-      const operator = col.operator !== undefined ? norm(g.cell(r, col.operator)?.v) : '';
-      const row = { machine: machine || '(no machine)', model, ratePerHour: rate, rateNote: rateRaw !== String(rate) ? rateRaw : '', operator, total: 0 };
+      const row = { machine: machine || '(no machine)', model, ratePerHour: rate, total: 0 };
       models.push(row);
       for (const { c, date } of dateCols) {
         const cell = ws[XLSX.utils.encode_cell({ r, c })];
@@ -138,7 +138,7 @@
         parts.forEach(p => {
           row.total += p.qty;
           entries.push({
-            date, shift: p.shift, machine: row.machine, model, operator, ratePerHour: rate, qty: p.qty,
+            date, shift: p.shift, machine: row.machine, model, ratePerHour: rate, qty: p.qty,
             planHours: rate > 0 ? Math.round((p.qty / rate) * 10) / 10 : null,
           });
         });

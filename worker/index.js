@@ -172,7 +172,6 @@ export function sanitizePlanEntry(e, month) {
     shift: e.shift === 'Night' ? 'Night' : 'Day',
     machine,
     model,
-    operator: str(e.operator, 120),
     ratePerHour: Number(e.ratePerHour) > 0 ? Number(e.ratePerHour) : 0,
     qty,
   };

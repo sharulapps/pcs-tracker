@@ -306,7 +306,7 @@ td.muted, .muted { color: var(--muted); }
   <section class="view" id="view-plan" hidden>
     <div class="panel stack">
       <div class="panel-head" style="margin:0"><h2>Import monthly production plan</h2><span class="hint">Excel, format FR-PROD-001</span></div>
-      <p style="margin:0;color:var(--ink-2);max-width:72ch">Upload the PRODUCTION PLAN SUMMARY workbook. Each row is a machine and model with its output per hour. Each date cell is the plan quantity: <code>D-120</code> is day shift, <code>N-200</code> is night shift, and a plain number counts as day shift. The highest <code>REV</code> sheet is picked automatically.</p>
+      <p style="margin:0;color:var(--ink-2);max-width:72ch">Upload the PRODUCTION PLAN SUMMARY workbook. Each row is a machine and model with its output per hour (a figure in brackets is ignored). Each date cell is the plan quantity: <code>D-120</code> is day shift, <code>N-200</code> is night shift, and a plain number counts as day shift. The highest <code>REV</code> sheet is picked automatically.</p>
       <div class="file-row">
         <label class="btn primary" for="planFile">Choose Excel file</label>
         <input type="file" id="planFile" accept=".xlsx,.xlsm,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel" hidden>
@@ -443,7 +443,7 @@ td.muted, .muted { color: var(--muted); }
    Live mode talks to the Cloudflare Worker (/api/*). Demo mode keeps everything in this browser.
    ========================================================================= */
 
-const DEMO_KEY = 'pcs.demo.v2';
+const DEMO_KEY = 'pcs.demo.v3';
 const SETTINGS_KEY = 'pcs.settings.v1';
 const XLSX_SRC = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
 
@@ -524,7 +524,7 @@ function normalizeRecord(r) {
 function normalizePlan(e) {
   const p = {
     date: e.date, shift: e.shift === 'Night' ? 'Night' : 'Day', machine: String(e.machine).trim(), model: String(e.model).trim(),
-    operator: String(e.operator ?? '').trim(), ratePerHour: Number(e.ratePerHour) || 0, qty: Number(e.qty) || 0,
+    ratePerHour: Number(e.ratePerHour) || 0, qty: Number(e.qty) || 0,
   };
   p.month = p.date.slice(0, 7); p.id = recId(p);
   return p;
@@ -532,10 +532,11 @@ function normalizePlan(e) {
 
 /* ---------------- Demo data ---------------- */
 function mulberry32(a) { return function () { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+const OPERATORS = ['Ziarul', 'Khokan', 'Azizul', 'Hemraj', 'Manan', 'Babulal', 'Murad'];
 const REMARKS = ['Mold change', 'Material shortage', 'Machine stop – heater', 'QC hold', 'Trial run', 'Power trip'];
 function seedDemo() {
   const src = window.DEMO_PLAN || { meta: null, entries: [] };
-  const plans = src.entries.map(([date, shift, machine, model, operator, ratePerHour, qty]) => normalizePlan({ date, shift, machine, model, operator, ratePerHour, qty }));
+  const plans = src.entries.map(([date, shift, machine, model, ratePerHour, qty]) => normalizePlan({ date, shift, machine, model, ratePerHour, qty }));
   const metas = src.meta ? [{ ...src.meta, entries: plans.length, total: plans.reduce((s, p) => s + p.qty, 0), importedAt: src.meta.issued + 'T09:00:00+08:00' }] : [];
   const rnd = mulberry32(20260930);
   const t = today();
@@ -551,7 +552,7 @@ function seedDemo() {
       const actual = Math.max(0, Math.round(h.plan * f));
       return { slot: slotLabel(h.hour), plan: h.plan, actual, reject: Math.round(actual * (0.003 + rnd() * 0.02)), remark };
     });
-    records.push(normalizeRecord({ ...p, id: undefined, planQty: p.qty, hourly, downtimeMin: bad >= 0 ? 15 + Math.round(rnd() * 40) : 0, supervisor: p.shift === 'Night' ? 'Night leader' : 'Day leader', source: 'demo', createdAt: p.date + 'T20:10:00+08:00' }));
+    records.push(normalizeRecord({ ...p, id: undefined, operator: OPERATORS[Math.floor(rnd() * OPERATORS.length)], planQty: p.qty, hourly, downtimeMin: bad >= 0 ? 15 + Math.round(rnd() * 40) : 0, supervisor: p.shift === 'Night' ? 'Night leader' : 'Day leader', source: 'demo', createdAt: p.date + 'T20:10:00+08:00' }));
   });
   return { plans, metas, records };
 }
@@ -561,7 +562,7 @@ function samplePlanEntry() {
   const D = DemoStore.load();
   const pick = D.plans.filter(p => p.date <= today() && p.machine === 'P11' && /MC3 HI/.test(p.model) && p.shift === 'Day').pop()
     || D.plans.filter(p => p.date <= today()).pop();
-  return pick || { date: today(), shift: 'Day', machine: 'P11', model: 'SAGA MC3 HI', operator: '', ratePerHour: 22, qty: 240 };
+  return pick || { date: today(), shift: 'Day', machine: 'P11', model: 'SAGA MC3 HI', ratePerHour: 22, qty: 240 };
 }
 function sampleFormData() {
   const p = samplePlanEntry();
@@ -571,7 +572,7 @@ function sampleFormData() {
     remark: i === 4 ? 'Mold change 35 min' : '',
   }));
   return {
-    date: p.date, shift: p.shift, machine: p.machine, model: p.model, operator: p.operator || 'Ziarul', supervisor: 'Azman',
+    date: p.date, shift: p.shift, machine: p.machine, model: p.model, operator: 'Ziarul', supervisor: 'Azman',
     downtimeMin: 35, hourly, confidence: 0.92,
     warnings: [`Row ${hourly[Math.min(4, hourly.length - 1)].slot}: actual is written over a correction. Please confirm.`],
   };
@@ -1016,12 +1017,12 @@ function renderPlanPreview() {
     <div class="kpi"><span class="eyebrow">Night shift (N)</span><span class="v num">${fmt(total - day)}<small>pcs</small></span><span class="s">${P.entries.filter(e => e.shift === 'Night').length} runs</span></div>
     <div class="kpi"><span class="eyebrow">Models planned</span><span class="v num">${active.length}<small>/ ${P.models.length}</small></span><span class="s">${new Set(active.map(m => m.machine)).size} machines</span></div>`;
   let lastM = null;
-  $('#tblPlan').innerHTML = `<thead><tr><th>Machine</th><th>Model</th><th class="r">Pcs/hr</th><th>Operator</th><th class="r">Day (D)</th><th class="r">Night (N)</th><th class="r">Total</th><th class="r">Days</th></tr></thead>
+  $('#tblPlan').innerHTML = `<thead><tr><th>Machine</th><th>Model</th><th class="r">Pcs/hr</th><th class="r">Day (D)</th><th class="r">Night (N)</th><th class="r">Total</th><th class="r">Days</th></tr></thead>
     <tbody>${active.map(m => {
       const es = P.entries.filter(e => e.machine === m.machine && e.model === m.model);
       const d = es.filter(e => e.shift === 'Day').reduce((s, e) => s + e.qty, 0), n = m.total - d;
       const showM = m.machine !== lastM; lastM = m.machine;
-      return `<tr><td>${showM ? `<b>${esc(m.machine)}</b>` : ''}</td><td>${esc(m.model)}</td><td class="r num">${m.rateNote ? esc(m.rateNote) : fmt(m.ratePerHour)}</td><td>${esc(m.operator) || '<span class="muted">—</span>'}</td><td class="r num">${d ? fmt(d) : '<span class="muted">—</span>'}</td><td class="r num">${n ? fmt(n) : '<span class="muted">—</span>'}</td><td class="r num"><b>${fmt(m.total)}</b></td><td class="r num">${new Set(es.map(e => e.date)).size}</td></tr>`;
+      return `<tr><td>${showM ? `<b>${esc(m.machine)}</b>` : ''}</td><td>${esc(m.model)}</td><td class="r num">${fmt(m.ratePerHour)}</td><td class="r num">${d ? fmt(d) : '<span class="muted">—</span>'}</td><td class="r num">${n ? fmt(n) : '<span class="muted">—</span>'}</td><td class="r num"><b>${fmt(m.total)}</b></td><td class="r num">${new Set(es.map(e => e.date)).size}</td></tr>`;
     }).join('')}</tbody>`;
 }
 $('#btnSavePlan').addEventListener('click', async () => {
@@ -1123,7 +1124,6 @@ async function updatePlanMatch(autofill) {
   if (draftPlan) {
     box.innerHTML = `<span>i</span><div><b>Plan found:</b> ${esc(draftPlan.machine)} · ${esc(draftPlan.model)} · ${draftPlan.shift} shift · <b class="num">${fmt(draftPlan.qty)} pcs</b> at ${fmt(draftPlan.ratePerHour)} pcs/hr. <button class="btn small" id="btnFillPlan">Fill hourly plan</button></div>`;
     if (draftPlan.model !== d.model) $('#dModel').value = draftPlan.model;
-    if (!$('#dOperator').value && draftPlan.operator) $('#dOperator').value = draftPlan.operator;
     if (autofill && readHours().every(h => !h.plan)) fillHourlyPlan();
   } else {
     box.innerHTML = `<span>i</span><div>No plan in the monthly plan for this date, shift, machine and model. The record is saved as unplanned; type the hourly plan if there is one.</div>`;
