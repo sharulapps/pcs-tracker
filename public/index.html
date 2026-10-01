@@ -891,7 +891,7 @@ const DemoStore = {
     D.records = D.records.filter(x => x.id !== r.id).concat([r]); this.save();
     return { record: r, replaced: existed };
   },
-  async remove(rec) { const id = rec.id || rec; const D = this.load(); D.records = D.records.filter(r => r.id !== id); this.save(); },
+  async remove(rec) { const id = rec._id || rec.id || rec; const D = this.load(); D.records = D.records.filter(r => r.id !== id); this.save(); },
   async listPlansFor(plant, from, to) { return this.listPlans(from, to); },
   async extract(imageDataUrl, isSample) {
     await new Promise(r => setTimeout(r, 1500));
@@ -1084,10 +1084,36 @@ function setMonth(ym, date) {
   d.value = date && date.startsWith(ym) ? date : defaultDate(ym);
   store(SETTINGS_KEY + '.month', ym);
 }
+/**
+ * Link PCS records to plan entries when the names differ slightly. A PCS saved before the plan existed keeps the
+ * model as written on the form (e.g. "104D SILENCER FR PANEL"), while a later plan revision may say
+ * "104D SILENCER FR PANEL (2 CAV)". Same date, shift and machine plus a model that contains the other counts as the
+ * same run; the record then takes the plan's model and id so the dashboard counts it against that plan.
+ */
+function reconcile(plans, recs) {
+  const ids = new Set(plans.map(p => p.id));
+  const used = new Set(recs.filter(r => ids.has(r.id)).map(r => r.id));
+  const groups = new Map();
+  plans.forEach(p => { const k = [p.date, p.shift, key(p.machine)].join('|'); if (!groups.has(k)) groups.set(k, []); groups.get(k).push(p); });
+  let linked = 0;
+  recs.forEach(r => {
+    if (ids.has(r.id)) return;
+    const km = key(r.model);
+    const cands = (groups.get([r.date, r.shift, key(r.machine)].join('|')) || []).filter(p => !used.has(p.id))
+      .filter(p => { const kp = key(p.model); return km && (kp === km || kp.includes(km) || km.includes(kp)); })
+      .sort((a, b) => Math.abs(key(a.model).length - km.length) - Math.abs(key(b.model).length - km.length));
+    if (!cands.length) return;
+    const p = cands[0];
+    r._id = r._id || r.id; r.formModel = r.model; r.model = p.model; r.id = p.id; r.planQty = r.planQty || p.qty;
+    used.add(p.id); linked++;
+  });
+  return linked;
+}
 async function loadData() {
   const from = monthStart(), to = monthEnd(curMonth());
   try {
     [S.records, S.plans, S.metas] = await Promise.all([Store().list(from, to), Store().listPlans(from, to), Store().listPlanMeta()]);
+    reconcile(S.plans, S.records);
     if (S.live) $('#setupBanner').hidden = true;
   } catch (e) {
     toast('Could not load data: ' + e.message); S.records = []; S.plans = [];
@@ -1667,7 +1693,7 @@ function renderRecords() {
   const planById = new Map(S.plans.map(p => [p.id, p]));
   $('#recHint').textContent = `${rows.length} records · ${monthLabel(curMonth())}`;
   $('#tblRecords').innerHTML = `<thead><tr><th>Date</th><th>Shift</th><th>Machine</th><th>Model</th><th class="r">Plan</th><th class="r">Actual</th><th class="r">Achievement</th><th>Source</th><th></th></tr></thead>
-    <tbody>${rows.map(r => { const pl = planById.get(r.id)?.qty ?? r.planQty; return `<tr data-id="${esc(r.id)}"><td>${dowDate(r.date)}</td><td>${shiftTag(r.shift)}</td><td><b>${esc(r.machine)}</b></td><td>${esc(r.model)}</td><td class="r num">${pl ? fmt(pl) : '<span class="muted">Unplanned</span>'}</td><td class="r num">${fmt(r.totalActual)}</td><td class="r">${pl ? statusPill(pct(r.totalActual, pl)) : ''}</td><td>${r.source === 'scan' ? 'Scan' : r.source === 'demo' ? 'Sample' : 'Manual'}</td>
+    <tbody>${rows.map(r => { const pl = planById.get(r.id)?.qty ?? r.planQty; return `<tr data-id="${esc(r.id)}"><td>${dowDate(r.date)}</td><td>${shiftTag(r.shift)}</td><td><b>${esc(r.machine)}</b></td><td>${esc(r.model)}${r.formModel ? `<div class="muted" style="font-size:11.5px">form: ${esc(r.formModel)}</div>` : ''}</td><td class="r num">${pl ? fmt(pl) : '<span class="muted">Unplanned</span>'}</td><td class="r num">${fmt(r.totalActual)}</td><td class="r">${pl ? statusPill(pct(r.totalActual, pl)) : ''}</td><td>${r.source === 'scan' ? 'Scan' : r.source === 'demo' ? 'Sample' : 'Manual'}</td>
       <td class="r"><button class="btn small ghost" data-act="view">Hours</button><button class="btn small ghost danger" data-act="del">Delete</button></td></tr>`; }).join('') || '<tr><td colspan="9" class="empty">No PCS records in this date range.</td></tr>'}</tbody>`;
 }
 $('#tblRecords').addEventListener('click', async ev => {
