@@ -204,6 +204,11 @@ input:focus, select:focus { border-color: var(--accent); outline: none; box-shad
 .checks { display: flex; flex-wrap: wrap; gap: 6px 14px; }
 .checks label { display: inline-flex; gap: 6px; align-items: center; font-size: 13px; text-transform: none; letter-spacing: 0; font-weight: 500; color: var(--ink); }
 #accountGrid { align-items: start; }
+.day-parts { display: flex; flex-wrap: wrap; gap: 6px 8px; align-items: center; margin-top: 12px; font-size: 12.5px; color: var(--muted); }
+.part-chip { border: 1px solid var(--line); background: var(--surface-2); color: var(--ink); border-radius: 999px; padding: 3px 11px; font-size: 12.5px; cursor: pointer; }
+.part-chip:hover { border-color: var(--accent); }
+.part-chip.on { background: var(--accent-wash); border-color: var(--accent); color: var(--accent); font-weight: 600; }
+.part-chip .q { color: var(--muted); font-family: var(--font-data); font-size: 11px; margin-left: 4px; }
 .no-scan #tblRecords [data-act="del"] { display: none; }
 .plant-rows { display: flex; flex-direction: column; gap: 8px; }
 .plant-rows .row { display: grid; grid-template-columns: 110px 1fr auto; gap: 8px; }
@@ -424,6 +429,7 @@ code { font-family: var(--font-data); font-size: 12px; background: var(--surface
         <div class="field"><label for="fModel">Model</label><select id="fModel"></select></div>
         <div class="field"><label for="fShift">Shift</label><select id="fShift"><option value="all">Day + Night</option><option value="Day">Day (D)</option><option value="Night">Night (N)</option></select></div>
       </div>
+      <div class="day-parts" id="dayParts" hidden></div>
     </div>
 
     <div class="hero">
@@ -1188,6 +1194,44 @@ function fillModelOptions() {
   sel.innerHTML = '<option value="all">All models</option>' + models.map(x => `<option>${esc(x)}</option>`).join('');
   sel.value = models.includes(cur) ? cur : 'all';
 }
+/** Parts (models) the chosen machine runs on the chosen date, from the plan and the PCS records. */
+function partsOnDay() {
+  const m = $('#fMachine').value, d = asOf(), sh = $('#fShift').value;
+  if (m === 'all' || !d) return [];
+  const map = new Map();
+  const add = (x, plan, actual) => {
+    if (x.machine !== m || x.date !== d || (sh !== 'all' && x.shift !== sh)) return;
+    const v = map.get(x.model) || { model: x.model, plan: 0, actual: 0 }; v.plan += plan; v.actual += actual; map.set(x.model, v);
+  };
+  S.plans.forEach(p => add(p, p.qty, 0));
+  S.records.forEach(r => add(r, 0, r.totalActual));
+  return [...map.values()].sort((a, b) => a.model.localeCompare(b.model));
+}
+/** After a machine or date change: pick the part that runs that day, or All models when there are several or none. */
+function autoPickModel() {
+  const parts = partsOnDay(), sel = $('#fModel');
+  const want = parts.length === 1 ? parts[0].model : 'all';
+  if ([...sel.options].some(o => o.value === want)) sel.value = want;
+  renderDayParts(parts);
+}
+function renderDayParts(parts = partsOnDay()) {
+  const box = $('#dayParts'), cur = $('#fModel').value;
+  box.hidden = !parts.length;
+  if (!parts.length) { box.innerHTML = ''; return; }
+  box.innerHTML = `<span>Running on ${esc($('#fMachine').value)} · ${shortDate(asOf())}:</span>`
+    + (parts.length > 1 ? `<button class="part-chip ${cur === 'all' ? 'on' : ''}" data-model="all">All ${parts.length} parts</button>` : '')
+    + parts.map(p => `<button class="part-chip ${cur === p.model ? 'on' : ''}" data-model="${esc(p.model)}">${esc(p.model)}<span class="q">${p.plan ? fmt(p.plan) + ' plan' : 'unplanned'}${p.actual ? ' · ' + fmt(p.actual) + ' act' : ''}</span></button>`).join('');
+}
+$('#dayParts').addEventListener('click', e => {
+  const b = e.target.closest('[data-model]'); if (!b) return;
+  $('#fModel').value = b.dataset.model; renderDayParts(); renderDashboard();
+});
+/** Change the selected day from anywhere (date picker, daily table, daily chart). */
+function setDay(d) {
+  $('#fDate').value = d;
+  if (!asOf() || !asOf().startsWith(curMonth())) setMonth(curMonth());
+  autoPickModel(); renderDashboard();
+}
 function match(x) {
   const m = $('#fMachine').value, mo = $('#fModel').value, sh = $('#fShift').value;
   return (m === 'all' || x.machine === m) && (mo === 'all' || x.model === mo) && (sh === 'all' || x.shift === sh);
@@ -1343,6 +1387,7 @@ function gaugeSVG(p) {
 /* ---------------- Dashboard ---------------- */
 function renderDashboard() {
   if (!S.ready || !/^\d{4}-\d{2}$/.test(curMonth()) || !asOf()) return;
+  renderDayParts();
   const ym = curMonth(), from = monthStart(), to = monthEnd(ym), t = asOf();
   const plans = S.plans.filter(match), recs = S.records.filter(match);
   const days = byDate(plans, recs, from, to);
@@ -1407,7 +1452,7 @@ function renderDashboard() {
     tipTitle: d => dowDate(d.date),
     isFuture: d => d.date > t,
     selected: d => d.date === t,
-    onPick: d => { $('#fDate').value = d.date; renderDashboard(); },
+    onPick: d => setDay(d.date),
     tipExtra: d => (d.n ? `<div class="row"><span>Reject</span><span class="num">${fmt(d.reject)}</span></div>` : '') + (d.plan === 0 && d.date <= t ? '<div class="row"><span class="muted">No plan this day</span><span></span></div>' : ''),
   });
 
@@ -1578,7 +1623,7 @@ $('#btnAi').addEventListener('click', async () => {
   finally { btn.disabled = false; renderAiSummary(); }
 });
 $('#aiLang').addEventListener('change', () => renderAiSummary());
-$('#tblDaily').addEventListener('click', e => { const tr = e.target.closest('tr[data-date]'); if (!tr) return; $('#fDate').value = tr.dataset.date; renderDashboard(); });
+$('#tblDaily').addEventListener('click', e => { const tr = e.target.closest('tr[data-date]'); if (!tr) return; setDay(tr.dataset.date); });
 
 function renderHourly() {
   const date = asOf();
@@ -2021,9 +2066,10 @@ function showView(v) {
 }
 $$('.tabs button').forEach(b => b.addEventListener('click', () => showView(b.dataset.view)));
 $('#fMonth').addEventListener('change', async () => { setMonth($('#fMonth').value); await refresh(); });
-$('#fDate').addEventListener('change', () => { const d = asOf(); if (!d || !d.startsWith(curMonth())) setMonth(curMonth()); renderDashboard(); });
-$('#fMachine').addEventListener('change', () => { fillModelOptions(); renderDashboard(); });
-['#fModel', '#fShift'].forEach(id => $(id).addEventListener('change', renderDashboard));
+$('#fDate').addEventListener('change', () => setDay(asOf()));
+$('#fMachine').addEventListener('change', () => { fillModelOptions(); autoPickModel(); renderDashboard(); });
+$('#fModel').addEventListener('change', renderDashboard);
+$('#fShift').addEventListener('change', () => { autoPickModel(); renderDashboard(); });
 
 async function refresh() {
   await loadData();
