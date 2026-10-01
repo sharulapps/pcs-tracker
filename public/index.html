@@ -209,6 +209,18 @@ code { font-family: var(--font-data); font-size: 12px; background: var(--surface
   .kpi .v { font-size: 22px; }
   .brand .sub { display: none; }
 }
+
+/* Plan import + machine table */
+.chips { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 13px; color: var(--ink-2); }
+.chips b { color: var(--ink); font-weight: 600; }
+tr.group td { background: var(--surface-2); font-weight: 600; }
+tr.group td:first-child { border-left: 3px solid var(--ink-2); }
+td.muted, .muted { color: var(--muted); }
+.shift-tag { font-family: var(--font-data); font-size: 11px; font-weight: 600; padding: 1px 6px; border-radius: 4px; border: 1px solid var(--line); color: var(--ink-2); }
+.shift-tag.n { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+.plan-hint { font-size: 13px; color: var(--ink-2); display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.file-row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.file-name { font-family: var(--font-data); font-size: 12px; color: var(--ink-2); overflow-wrap: anywhere; }
 </style>
 </head>
 <body>
@@ -216,13 +228,14 @@ code { font-family: var(--font-data); font-size: 12px; background: var(--surface
 <header class="top">
   <div class="top-inner">
     <div class="brand">
-      <span class="stamp">PCS-01</span>
+      <span class="stamp">FR-PROD-001</span>
       <h1>Production Output Tracker</h1>
       <span class="sub">Plan vs Actual · output · daily · hourly</span>
       <span id="modePill" class="mode-pill">Demo data</span>
     </div>
     <nav class="tabs" role="tablist" aria-label="Sections">
       <button role="tab" id="tab-dashboard" aria-selected="true" data-view="dashboard">Dashboard</button>
+      <button role="tab" id="tab-plan" aria-selected="false" data-view="plan">Monthly plan</button>
       <button role="tab" id="tab-scan" aria-selected="false" data-view="scan">Scan PCS form</button>
       <button role="tab" id="tab-records" aria-selected="false" data-view="records">Records</button>
       <button role="tab" id="tab-settings" aria-selected="false" data-view="settings">Settings</button>
@@ -237,16 +250,12 @@ code { font-family: var(--font-data); font-size: 12px; background: var(--surface
       <div class="filters">
         <div class="field"><label for="fFrom">From</label><input type="date" id="fFrom"></div>
         <div class="field"><label for="fTo">To</label><input type="date" id="fTo"></div>
-        <div class="field"><label for="fLine">Line</label><select id="fLine"><option value="all">All lines</option></select></div>
-        <div class="field"><label for="fShift">Shift</label><select id="fShift"><option value="all">All shifts</option><option>Day</option><option>Night</option></select></div>
+        <div class="field"><label for="fMachine">Machine</label><select id="fMachine"></select></div>
+        <div class="field"><label for="fModel">Model</label><select id="fModel"></select></div>
+        <div class="field"><label for="fShift">Shift</label><select id="fShift"><option value="all">Day + Night</option><option value="Day">Day (D)</option><option value="Night">Night (N)</option></select></div>
         <div class="field">
           <label>Range</label>
-          <div class="presets" id="presets">
-            <button class="btn small" data-days="7">7 days</button>
-            <button class="btn small" data-days="14">14 days</button>
-            <button class="btn small" data-days="30">30 days</button>
-            <button class="btn small" data-days="mtd">Month to date</button>
-          </div>
+          <div class="presets" id="presets"></div>
         </div>
       </div>
     </div>
@@ -277,10 +286,10 @@ code { font-family: var(--font-data); font-size: 12px; background: var(--surface
         <h2>Hourly plan vs actual</h2>
         <div class="filters">
           <div class="field"><label for="hDate">Date</label><input type="date" id="hDate"></div>
-          <div class="field"><label for="hLine">Line</label><select id="hLine"><option value="all">All lines</option></select></div>
         </div>
       </div>
-      <div class="legend" style="margin-bottom:6px"><span><i class="sw plan"></i>Plan</span><span><i class="sw actual"></i>Actual</span></div>
+      <div class="plan-hint" id="hourHint" style="margin-bottom:8px"></div>
+      <div class="legend" style="margin-bottom:6px"><span><i class="sw plan"></i>Plan (output / hour)</span><span><i class="sw actual"></i>Actual (PCS)</span></div>
       <div class="chart" id="chartHourly"></div>
       <div class="table-wrap" style="margin-top:12px">
         <table id="tblHourly"></table>
@@ -288,8 +297,36 @@ code { font-family: var(--font-data); font-size: 12px; background: var(--surface
     </div>
 
     <div class="panel">
-      <div class="panel-head"><h2>By line</h2><span class="hint">Selected date range</span></div>
-      <div class="table-wrap"><table id="tblLines"></table></div>
+      <div class="panel-head"><h2>By machine and model</h2><span class="hint" id="machineHint"></span></div>
+      <div class="table-wrap"><table id="tblMachines"></table></div>
+    </div>
+  </section>
+
+  <!-- PLAN IMPORT -->
+  <section class="view" id="view-plan" hidden>
+    <div class="panel stack">
+      <div class="panel-head" style="margin:0"><h2>Import monthly production plan</h2><span class="hint">Excel, format FR-PROD-001</span></div>
+      <p style="margin:0;color:var(--ink-2);max-width:72ch">Upload the PRODUCTION PLAN SUMMARY workbook. Each row is a machine and model with its output per hour. Each date cell is the plan quantity: <code>D-120</code> is day shift, <code>N-200</code> is night shift, and a plain number counts as day shift. The highest <code>REV</code> sheet is picked automatically.</p>
+      <div class="file-row">
+        <label class="btn primary" for="planFile">Choose Excel file</label>
+        <input type="file" id="planFile" accept=".xlsx,.xlsm,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel" hidden>
+        <span class="file-name" id="planFileName">No file chosen</span>
+        <div class="field" id="sheetField" hidden><label for="planSheet">Sheet</label><select id="planSheet"></select></div>
+      </div>
+      <div class="progress" id="planProgress" hidden><span class="spinner"></span><span>Reading workbook…</span></div>
+    </div>
+
+    <div class="panel stack" id="planPreview" hidden>
+      <div class="panel-head" style="margin:0"><h2 id="planTitle"></h2><button class="btn primary" id="btnSavePlan">Save plan</button></div>
+      <div class="chips" id="planChips"></div>
+      <div id="planNotices" class="stack"></div>
+      <div class="kpis" id="planKpis"></div>
+      <div class="table-wrap"><table id="tblPlan"></table></div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head"><h2>Saved plans</h2><span class="hint">Saving a month again replaces that month's plan</span></div>
+      <div class="table-wrap"><table id="tblPlanMeta"></table></div>
     </div>
   </section>
 
@@ -325,15 +362,16 @@ code { font-family: var(--font-data); font-size: 12px; background: var(--surface
           <div id="reviewNotices" class="stack"></div>
           <div class="form-grid">
             <div class="field"><label for="dDate">Date</label><input type="date" id="dDate"></div>
-            <div class="field"><label for="dShift">Shift</label><select id="dShift"><option>Day</option><option>Night</option></select></div>
-            <div class="field"><label for="dLine">Line</label><input type="text" id="dLine" list="lineList"></div>
-            <div class="field"><label for="dPartNo">Part no.</label><input type="text" id="dPartNo"></div>
-            <div class="field"><label for="dPartName">Part name</label><input type="text" id="dPartName"></div>
+            <div class="field"><label for="dShift">Shift</label><select id="dShift"><option value="Day">Day (D)</option><option value="Night">Night (N)</option></select></div>
+            <div class="field"><label for="dMachine">Machine</label><input type="text" id="dMachine" list="machineList"></div>
+            <div class="field"><label for="dModel">Model</label><input type="text" id="dModel" list="modelList"></div>
+            <div class="field"><label for="dOperator">Operator</label><input type="text" id="dOperator"></div>
             <div class="field"><label for="dSupervisor">Supervisor</label><input type="text" id="dSupervisor"></div>
-            <div class="field"><label for="dDailyPlan">Daily plan (pcs)</label><input type="number" id="dDailyPlan" min="0" inputmode="numeric"></div>
             <div class="field"><label for="dDowntime">Downtime (min)</label><input type="number" id="dDowntime" min="0" inputmode="numeric"></div>
           </div>
-          <datalist id="lineList"></datalist>
+          <datalist id="machineList"></datalist>
+          <datalist id="modelList"></datalist>
+          <div class="notice info" id="planMatch"></div>
           <div class="table-wrap">
             <table class="hour-table" id="hourEdit"></table>
           </div>
@@ -367,20 +405,25 @@ code { font-family: var(--font-data); font-size: 12px; background: var(--surface
         <div class="field"><label for="sApi">Worker URL</label><input type="url" id="sApi" placeholder="Blank = same site as this page"></div>
         <div class="field"><label for="sToken">App token</label><input type="password" id="sToken" placeholder="Matches APP_TOKEN secret on the Worker"></div>
         <label class="check"><input type="checkbox" id="sDemo"> Always use demo mode (data stays in this browser)</label>
+        <div class="form-grid">
+          <div class="field"><label for="sDayStart">Day shift starts</label><input type="number" id="sDayStart" min="0" max="23" inputmode="numeric"></div>
+          <div class="field"><label for="sNightStart">Night shift starts</label><input type="number" id="sNightStart" min="0" max="23" inputmode="numeric"></div>
+        </div>
+        <span class="hint muted" style="font-size:12px">Shift start hour (0–23) sets the hourly plan: output/hour is laid out hour by hour from the start of the shift until the plan quantity is reached.</span>
         <div class="row-actions">
           <button class="btn" id="btnResetDemo">Reset demo data</button>
           <button class="btn primary" id="btnSaveSettings">Save and reconnect</button>
         </div>
       </div>
       <div class="panel">
-        <div class="panel-head"><h2>How a PCS form reaches the dashboard</h2></div>
+        <div class="panel-head"><h2>How the numbers get here</h2></div>
         <ol class="flow">
-          <li><div><b>Snap</b><span>Operator or supervisor photographs the paper PCS form at the line.</span></div></li>
-          <li><div><b>Cloudflare Worker</b><span>Page sends the photo to <code>/api/extract</code>. The Gemini key stays on the Worker.</span></div></li>
-          <li><div><b>Gemini extracts</b><span>Header fields and each hour's plan, actual, reject and remarks come back as JSON.</span></div></li>
-          <li><div><b>Human check</b><span>Supervisor corrects any misread numbers, then saves.</span></div></li>
-          <li><div><b>Firestore</b><span>Worker writes the record to the <code>pcs_records</code> collection.</span></div></li>
-          <li><div><b>Dashboard</b><span>Output, daily and hourly plan vs actual update from the saved records.</span></div></li>
+          <li><div><b>Plan from Excel</b><span>Planner uploads the monthly PRODUCTION PLAN SUMMARY. Each D / N cell becomes a plan for that date, shift, machine and model.</span></div></li>
+          <li><div><b>Snap the PCS</b><span>At the end of the shift the supervisor photographs the PCS form.</span></div></li>
+          <li><div><b>Gemini extracts</b><span>The Worker sends the photo to Gemini. Machine, model, shift and each hour's actual and reject come back as JSON.</span></div></li>
+          <li><div><b>Human check</b><span>Supervisor corrects any misread numbers. The hourly plan is filled from the monthly plan's output/hour.</span></div></li>
+          <li><div><b>Firestore</b><span>Worker saves plans to <code>pcs_plans</code> and PCS records to <code>pcs_records</code>.</span></div></li>
+          <li><div><b>Dashboard</b><span>Output, daily and hourly plan vs actual by machine, model and shift.</span></div></li>
         </ol>
       </div>
     </div>
@@ -389,17 +432,20 @@ code { font-family: var(--font-data); font-size: 12px; background: var(--surface
 
 <div id="toast" class="toast" role="status" hidden></div>
 
+<script src="plan-parser.js"></script>
+<script src="demo-data.js"></script>
 <script>
 'use strict';
 /* =========================================================================
    PCS Output Tracker — vanilla JS front end
-   Live mode: talks to the Cloudflare Worker (/api/*) which calls Gemini and
-   Firestore. Demo mode: seeded records in this browser, simulated extraction.
+   Plan:   monthly Excel (FR-PROD-001) -> plan entries {date, shift, machine, model, ratePerHour, qty}
+   Actual: PCS form photo -> Gemini -> reviewed record {date, shift, machine, model, hourly[]}
+   Live mode talks to the Cloudflare Worker (/api/*). Demo mode keeps everything in this browser.
    ========================================================================= */
 
-const DEMO_KEY = 'pcs.demo.records.v1';
+const DEMO_KEY = 'pcs.demo.v2';
 const SETTINGS_KEY = 'pcs.settings.v1';
-const SLOTS_DAY = ['08:00-09:00', '09:00-10:00', '10:00-11:00', '11:00-12:00', '13:00-14:00', '14:00-15:00', '15:00-16:00', '16:00-17:00'];
+const XLSX_SRC = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
 
 const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => [...el.querySelectorAll(s)];
@@ -408,10 +454,17 @@ const pct = (a, p) => (p > 0 ? (a / p) * 100 : 0);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const toISO = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 const addDays = (iso, n) => { const d = new Date(iso + 'T00:00:00'); d.setDate(d.getDate() + n); return toISO(d); };
-const shortDate = iso => { const d = new Date(iso + 'T00:00:00'); return d.toLocaleDateString('en-MY', { day: 'numeric', month: 'short' }); };
-const dowDate = iso => { const d = new Date(iso + 'T00:00:00'); return d.toLocaleDateString('en-MY', { weekday: 'short', day: 'numeric', month: 'short' }); };
+const shortDate = iso => new Date(iso + 'T00:00:00').toLocaleDateString('en-MY', { day: 'numeric', month: 'short' });
+const dowDate = iso => new Date(iso + 'T00:00:00').toLocaleDateString('en-MY', { weekday: 'short', day: 'numeric', month: 'short' });
+const monthLabel = ym => new Date(ym + '-01T00:00:00').toLocaleDateString('en-MY', { month: 'short', year: 'numeric' });
+const monthEnd = ym => { const d = new Date(ym + '-01T00:00:00'); d.setMonth(d.getMonth() + 1); d.setDate(0); return toISO(d); };
+const today = () => toISO(new Date());
+const key = s => String(s ?? '').toUpperCase().replace(/[^A-Z0-9]+/g, '');
+const slug = (...a) => a.join('_').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 140);
+const recId = r => slug(r.date, r.shift, r.machine, r.model);
+const shiftTag = s => `<span class="shift-tag ${s === 'Night' ? 'n' : ''}">${s === 'Night' ? 'N' : 'D'}</span>`;
 
-function store(key, val) { try { if (val === undefined) return JSON.parse(localStorage.getItem(key)); localStorage.setItem(key, JSON.stringify(val)); } catch (e) { return null; } }
+function store(k, val) { try { if (val === undefined) return JSON.parse(localStorage.getItem(k)); localStorage.setItem(k, JSON.stringify(val)); } catch (e) { return null; } }
 
 function statusOf(p) {
   if (p >= 100) return { cls: 'good', icon: '✓', label: 'On target' };
@@ -423,7 +476,22 @@ const deltaSpan = v => `<span class="${v >= 0 ? 'delta-pos' : 'delta-neg'}">${v 
 
 function toast(msg) {
   const t = $('#toast'); t.textContent = msg; t.hidden = false;
-  clearTimeout(toast._t); toast._t = setTimeout(() => (t.hidden = true), 2600);
+  clearTimeout(toast._t); toast._t = setTimeout(() => (t.hidden = true), 2800);
+}
+
+/* ---------------- Settings ---------------- */
+const Settings = Object.assign({ apiBase: '', token: '', forceDemo: false, dayStart: 8, nightStart: 20 }, store(SETTINGS_KEY) || {});
+const shiftStart = s => (s === 'Night' ? Settings.nightStart : Settings.dayStart);
+const slotLabel = h => `${String(h % 24).padStart(2, '0')}:00-${String((h + 1) % 24).padStart(2, '0')}:00`;
+const slotHour = slot => { const m = String(slot).match(/^\s*(\d{1,2})/); return m ? Number(m[1]) % 24 : null; };
+
+/** Plan entry -> hourly plan: output/hour from shift start until qty is reached. */
+function hourlyPlan(e) {
+  const rows = [];
+  const rate = e.ratePerHour > 0 ? e.ratePerHour : Math.ceil(e.qty / 11);
+  let left = e.qty, h = shiftStart(e.shift);
+  while (left > 0 && rows.length < 24) { const q = Math.min(rate, left); rows.push({ hour: h % 24, plan: q }); left -= q; h++; }
+  return rows;
 }
 
 /* ---------------- Record helpers ---------------- */
@@ -435,137 +503,149 @@ function normalizeRecord(r) {
     reject: Math.max(0, Number(h.reject) || 0),
     remark: String(h.remark ?? '').trim(),
   })).filter(h => h.slot || h.plan || h.actual);
-  const hourPlan = hourly.reduce((s, h) => s + h.plan, 0);
   const out = {
-    id: r.id,
-    date: /^\d{4}-\d{2}-\d{2}$/.test(r.date) ? r.date : toISO(new Date()),
+    date: /^\d{4}-\d{2}-\d{2}$/.test(r.date) ? r.date : today(),
     shift: r.shift === 'Night' ? 'Night' : 'Day',
-    line: String(r.line || 'Unassigned').trim(),
-    partNo: String(r.partNo ?? '').trim(),
-    partName: String(r.partName ?? '').trim(),
+    machine: String(r.machine || r.line || 'Unassigned').trim(),
+    model: String(r.model || r.partName || '').trim(),
+    operator: String(r.operator ?? '').trim(),
     supervisor: String(r.supervisor ?? '').trim(),
-    dailyPlan: Number(r.dailyPlan) > 0 ? Number(r.dailyPlan) : hourPlan,
     downtimeMin: Math.max(0, Number(r.downtimeMin) || 0),
+    planQty: Math.max(0, Number(r.planQty) || 0),
     hourly,
     source: r.source || 'manual',
     createdAt: r.createdAt || new Date().toISOString(),
   };
+  out.id = r.id || recId(out);
   out.totalActual = hourly.reduce((s, h) => s + h.actual, 0);
   out.totalReject = hourly.reduce((s, h) => s + h.reject, 0);
   return out;
 }
+function normalizePlan(e) {
+  const p = {
+    date: e.date, shift: e.shift === 'Night' ? 'Night' : 'Day', machine: String(e.machine).trim(), model: String(e.model).trim(),
+    operator: String(e.operator ?? '').trim(), ratePerHour: Number(e.ratePerHour) || 0, qty: Number(e.qty) || 0,
+  };
+  p.month = p.date.slice(0, 7); p.id = recId(p);
+  return p;
+}
 
 /* ---------------- Demo data ---------------- */
 function mulberry32(a) { return function () { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
-const DEMO_LINES = [
-  { line: 'Line A', partNo: 'BRKT-2231', partName: 'Bracket, seat rail', perHour: 120, sup: 'Faizal' },
-  { line: 'Line B', partNo: 'HSG-1180', partName: 'Housing, pump', perHour: 90, sup: 'Mei Ling' },
-  { line: 'Line C', partNo: 'CVR-0457', partName: 'Cover, battery', perHour: 150, sup: 'Ravi' },
-];
+const REMARKS = ['Mold change', 'Material shortage', 'Machine stop – heater', 'QC hold', 'Trial run', 'Power trip'];
 function seedDemo() {
+  const src = window.DEMO_PLAN || { meta: null, entries: [] };
+  const plans = src.entries.map(([date, shift, machine, model, operator, ratePerHour, qty]) => normalizePlan({ date, shift, machine, model, operator, ratePerHour, qty }));
+  const metas = src.meta ? [{ ...src.meta, entries: plans.length, total: plans.reduce((s, p) => s + p.qty, 0), importedAt: src.meta.issued + 'T09:00:00+08:00' }] : [];
   const rnd = mulberry32(20260930);
-  const today = toISO(new Date());
-  const recs = [];
-  for (let back = 27; back >= 0; back--) {
-    const date = addDays(today, -back);
-    if (new Date(date + 'T00:00:00').getDay() === 0) continue; // Sunday off
-    const dayF = 0.95 + rnd() * 0.1;
-    DEMO_LINES.forEach((L, li) => {
-      const bias = [1.0, 0.93, 1.02][li] * dayF;
-      const badHour = rnd() < 0.3 ? Math.floor(rnd() * SLOTS_DAY.length) : -1;
-      const hourly = SLOTS_DAY.map((slot, i) => {
-        const plan = i === 0 ? Math.round(L.perHour * 0.85) : L.perHour; // warm-up first hour
-        let f = bias + (rnd() - 0.5) * 0.16;
-        let remark = '';
-        if (i === badHour) { f = 0.35 + rnd() * 0.3; remark = ['Die change', 'Material shortage', 'Machine stop – sensor', 'QC hold'][Math.floor(rnd() * 4)]; }
-        const actual = Math.max(0, Math.round(plan * f));
-        const reject = Math.round(actual * (0.004 + rnd() * 0.018));
-        return { slot, plan, actual, reject, remark };
-      });
-      recs.push(normalizeRecord({
-        id: `demo-${date}-${li}`, date, shift: 'Day', line: L.line, partNo: L.partNo, partName: L.partName,
-        supervisor: L.sup, dailyPlan: hourly.reduce((s, h) => s + h.plan, 0),
-        downtimeMin: badHour >= 0 ? 20 + Math.round(rnd() * 30) : 0, hourly, source: 'demo',
-        createdAt: date + 'T17:15:00+08:00',
-      }));
+  const t = today();
+  const machineBias = {};
+  const records = [];
+  plans.filter(p => p.date <= t).forEach(p => {
+    if (rnd() < 0.03) return; // PCS not submitted
+    const mb = machineBias[p.machine] ??= 0.95 + rnd() * 0.1;
+    const bad = rnd() < 0.25 ? Math.floor(rnd() * 8) : -1;
+    const hourly = hourlyPlan(p).map((h, i) => {
+      let f = mb + (rnd() - 0.4) * 0.16, remark = '';
+      if (i === bad) { f = 0.3 + rnd() * 0.35; remark = REMARKS[Math.floor(rnd() * REMARKS.length)]; }
+      const actual = Math.max(0, Math.round(h.plan * f));
+      return { slot: slotLabel(h.hour), plan: h.plan, actual, reject: Math.round(actual * (0.003 + rnd() * 0.02)), remark };
     });
-  }
-  return recs;
+    records.push(normalizeRecord({ ...p, id: undefined, planQty: p.qty, hourly, downtimeMin: bad >= 0 ? 15 + Math.round(rnd() * 40) : 0, supervisor: p.shift === 'Night' ? 'Night leader' : 'Day leader', source: 'demo', createdAt: p.date + 'T20:10:00+08:00' }));
+  });
+  return { plans, metas, records };
 }
 
-/* Sample PCS form: drawn on canvas; the demo extraction returns exactly these values. */
+/* Sample PCS form: drawn on canvas; demo extraction returns exactly these values. */
+function samplePlanEntry() {
+  const D = DemoStore.load();
+  const pick = D.plans.filter(p => p.date <= today() && p.machine === 'P11' && /MC3 HI/.test(p.model) && p.shift === 'Day').pop()
+    || D.plans.filter(p => p.date <= today()).pop();
+  return pick || { date: today(), shift: 'Day', machine: 'P11', model: 'SAGA MC3 HI', operator: '', ratePerHour: 22, qty: 240 };
+}
 function sampleFormData() {
-  const hourly = [
-    ['08:00-09:00', 76, 71, 1, ''], ['09:00-10:00', 90, 88, 2, ''], ['10:00-11:00', 90, 92, 1, ''],
-    ['11:00-12:00', 90, 54, 0, 'Material shortage 25 min'], ['13:00-14:00', 90, 86, 2, ''],
-    ['14:00-15:00', 90, 91, 1, ''], ['15:00-16:00', 90, 89, 0, ''], ['16:00-17:00', 90, 84, 1, 'Cleaning'],
-  ].map(([slot, plan, actual, reject, remark]) => ({ slot, plan, actual, reject, remark }));
+  const p = samplePlanEntry();
+  const actualF = [0.86, 1.0, 1.05, 0.95, 0.41, 1.0, 0.95, 1.05, 0.91, 1.0, 0.9, 1, 1, 1];
+  const hourly = hourlyPlan(p).map((h, i) => ({
+    slot: slotLabel(h.hour), plan: 0, actual: Math.round(h.plan * actualF[i]), reject: i % 3 === 1 ? 1 : 0,
+    remark: i === 4 ? 'Mold change 35 min' : '',
+  }));
   return {
-    date: toISO(new Date()), shift: 'Day', line: 'Line B', partNo: 'HSG-1180', partName: 'Housing, pump',
-    supervisor: 'Mei Ling', dailyPlan: 706, downtimeMin: 25, hourly,
-    confidence: 0.93, warnings: ['Row 11:00-12:00: actual "54" is written over a correction. Please confirm.'],
+    date: p.date, shift: p.shift, machine: p.machine, model: p.model, operator: p.operator || 'Ziarul', supervisor: 'Azman',
+    downtimeMin: 35, hourly, confidence: 0.92,
+    warnings: [`Row ${hourly[Math.min(4, hourly.length - 1)].slot}: actual is written over a correction. Please confirm.`],
   };
 }
 async function drawSampleForm() {
   try { await document.fonts.load('26px Caveat'); } catch (e) { /* fallback font */ }
   const d = sampleFormData();
-  const W = 900, H = 1180, c = document.createElement('canvas');
+  const rh = 54, top = 330, n = d.hourly.length;
+  const W = 900, H = top + (n + 2) * rh + 140, c = document.createElement('canvas');
   c.width = W; c.height = H;
   const g = c.getContext('2d');
   g.fillStyle = '#fbfaf6'; g.fillRect(0, 0, W, H);
   g.fillStyle = '#1b1f24'; g.strokeStyle = '#1b1f24';
   g.font = '600 26px "IBM Plex Sans", Arial'; g.fillText('PRODUCTION CONTROL SHEET (PCS)', 50, 70);
-  g.font = '14px "IBM Plex Mono", monospace'; g.fillText('Form PCS-01  Rev.3', 700, 70);
+  g.font = '14px "IBM Plex Mono", monospace'; g.fillText('M1 · Form PCS-01', 700, 70);
   g.lineWidth = 2; g.strokeRect(40, 40, W - 80, H - 80);
   const hand = (t, x, y, size = 30) => { g.save(); g.fillStyle = '#1d3f9a'; g.font = `600 ${size}px Caveat, "Comic Sans MS", cursive`; g.fillText(t, x, y); g.restore(); };
   const label = (t, x, y) => { g.font = '600 15px "IBM Plex Sans", Arial'; g.fillStyle = '#1b1f24'; g.fillText(t, x, y); };
-  const fields = [['Date', d.date.split('-').reverse().join('/'), 60, 130], ['Shift', d.shift, 470, 130], ['Line', d.line, 60, 180], ['Part No', d.partNo, 470, 180], ['Part Name', d.partName, 60, 230], ['Daily Plan', String(d.dailyPlan) + ' pcs', 470, 230], ['Supervisor', d.supervisor, 60, 280], ['Downtime', d.downtimeMin + ' min', 470, 280]];
-  fields.forEach(([k, v, x, y]) => { label(k + ':', x, y); g.lineWidth = 1; g.beginPath(); g.moveTo(x + 105, y + 6); g.lineTo(x + 380, y + 6); g.stroke(); hand(v, x + 115, y); });
-  const cols = [60, 250, 380, 510, 620, 840], top = 330, rh = 64;
-  const heads = ['Time', 'Plan', 'Actual', 'Reject', 'Remarks'];
+  const fields = [['Date', d.date.split('-').reverse().join('/'), 60, 130], ['Shift', d.shift === 'Night' ? 'N' : 'D', 470, 130], ['Machine', d.machine, 60, 180], ['Model', d.model, 470, 180], ['Operator', d.operator, 60, 230], ['Downtime', d.downtimeMin + ' min', 470, 230], ['Supervisor', d.supervisor, 60, 280]];
+  fields.forEach(([k, v, x, y]) => { label(k + ':', x, y); g.lineWidth = 1; g.beginPath(); g.moveTo(x + 100, y + 6); g.lineTo(x + 380, y + 6); g.stroke(); hand(v, x + 110, y, v.length > 14 ? 24 : 30); });
+  const cols = [60, 260, 400, 530, 840];
   g.lineWidth = 1.5;
-  for (let i = 0; i <= d.hourly.length + 2; i++) { g.beginPath(); g.moveTo(cols[0], top + i * rh); g.lineTo(cols[5], top + i * rh); g.stroke(); }
-  cols.forEach(x => { g.beginPath(); g.moveTo(x, top); g.lineTo(x, top + (d.hourly.length + 2) * rh); g.stroke(); });
-  heads.forEach((h, i) => label(h, cols[i] + 12, top + 40));
+  for (let i = 0; i <= n + 2; i++) { g.beginPath(); g.moveTo(cols[0], top + i * rh); g.lineTo(cols[4], top + i * rh); g.stroke(); }
+  cols.forEach(x => { g.beginPath(); g.moveTo(x, top); g.lineTo(x, top + (n + 2) * rh); g.stroke(); });
+  ['Time', 'Actual', 'Reject', 'Remarks'].forEach((h, i) => label(h, cols[i] + 12, top + 34));
   d.hourly.forEach((h, i) => {
-    const y = top + (i + 1) * rh + 42;
+    const y = top + (i + 1) * rh + 36;
     g.font = '15px "IBM Plex Mono", monospace'; g.fillStyle = '#1b1f24'; g.fillText(h.slot, cols[0] + 12, y);
-    hand(String(h.plan), cols[1] + 30, y, 32);
-    if (h.slot === '11:00-12:00') { hand('64', cols[2] + 30, y, 32); g.strokeStyle = '#1d3f9a'; g.beginPath(); g.moveTo(cols[2] + 24, y - 10); g.lineTo(cols[2] + 70, y - 14); g.stroke(); g.strokeStyle = '#1b1f24'; hand('54', cols[2] + 74, y - 8, 30); }
-    else hand(String(h.actual), cols[2] + 30, y, 32);
-    hand(String(h.reject), cols[3] + 30, y, 32);
-    if (h.remark) hand(h.remark.length > 16 ? h.remark.slice(0, 16) + '…' : h.remark, cols[4] + 8, y, 22);
+    if (i === 4) { hand(String(h.actual + 10), cols[1] + 30, y, 30); g.strokeStyle = '#1d3f9a'; g.beginPath(); g.moveTo(cols[1] + 24, y - 10); g.lineTo(cols[1] + 64, y - 14); g.stroke(); g.strokeStyle = '#1b1f24'; hand(String(h.actual), cols[1] + 72, y - 6, 28); }
+    else hand(String(h.actual), cols[1] + 30, y, 30);
+    hand(String(h.reject), cols[2] + 30, y, 30);
+    if (h.remark) hand(h.remark, cols[3] + 10, y, 24);
   });
-  const ty = top + (d.hourly.length + 1) * rh + 42;
+  const ty = top + (n + 1) * rh + 36;
   label('TOTAL', cols[0] + 12, ty);
-  hand(String(d.hourly.reduce((s, h) => s + h.plan, 0)), cols[1] + 22, ty, 32);
-  hand(String(d.hourly.reduce((s, h) => s + h.actual, 0)), cols[2] + 22, ty, 32);
-  hand(String(d.hourly.reduce((s, h) => s + h.reject, 0)), cols[3] + 30, ty, 32);
-  label('Checked by:', 60, H - 90); hand('ML', 170, H - 88);
+  hand(String(d.hourly.reduce((s, h) => s + h.actual, 0)), cols[1] + 24, ty, 30);
+  hand(String(d.hourly.reduce((s, h) => s + h.reject, 0)), cols[2] + 30, ty, 30);
+  label('Checked by:', 60, H - 70); hand('Azman', 170, H - 68);
   return c.toDataURL('image/jpeg', 0.9);
 }
 
 /* ---------------- Data stores ---------------- */
-const Settings = Object.assign({ apiBase: '', token: '', forceDemo: false }, store(SETTINGS_KEY) || {});
-let demoMemory = null;
-
+let demo = null;
 const DemoStore = {
   load() {
-    if (demoMemory) return demoMemory;
-    demoMemory = store(DEMO_KEY);
-    if (!Array.isArray(demoMemory) || !demoMemory.length) { demoMemory = seedDemo(); store(DEMO_KEY, demoMemory); }
-    return demoMemory;
+    if (demo) return demo;
+    demo = store(DEMO_KEY);
+    if (!demo || !Array.isArray(demo.plans)) { demo = seedDemo(); this.save(); }
+    return demo;
   },
-  async list(from, to) { return this.load().filter(r => r.date >= from && r.date <= to); },
-  async add(rec) { const r = normalizeRecord({ ...rec, id: 'local-' + Date.now().toString(36) }); this.load().push(r); store(DEMO_KEY, demoMemory); return r; },
-  async remove(id) { demoMemory = this.load().filter(r => r.id !== id); store(DEMO_KEY, demoMemory); },
-  reset() { demoMemory = seedDemo(); store(DEMO_KEY, demoMemory); },
+  save() { store(DEMO_KEY, demo); },
+  reset() { demo = seedDemo(); this.save(); },
+  async listPlans(from, to) { return this.load().plans.filter(p => p.date >= from && p.date <= to); },
+  async listPlanMeta() { return this.load().metas.slice().sort((a, b) => b.month.localeCompare(a.month)); },
+  async savePlan(month, meta, entries) {
+    const D = this.load();
+    const plans = entries.map(normalizePlan).filter(p => p.month === month);
+    D.plans = D.plans.filter(p => p.month !== month).concat(plans);
+    D.metas = D.metas.filter(m => m.month !== month).concat([{ ...meta, month, entries: plans.length, total: plans.reduce((s, p) => s + p.qty, 0), importedAt: new Date().toISOString() }]);
+    this.save();
+    return { saved: plans.length };
+  },
+  async list(from, to) { return this.load().records.filter(r => r.date >= from && r.date <= to); },
+  async add(rec) {
+    const r = normalizeRecord({ ...rec, id: undefined }); const D = this.load();
+    const existed = D.records.some(x => x.id === r.id);
+    D.records = D.records.filter(x => x.id !== r.id).concat([r]); this.save();
+    return { record: r, replaced: existed };
+  },
+  async remove(id) { const D = this.load(); D.records = D.records.filter(r => r.id !== id); this.save(); },
   async extract(imageDataUrl, isSample) {
-    await new Promise(r => setTimeout(r, 1600));
-    if (isSample) return sampleFormData();
+    await new Promise(r => setTimeout(r, 1500));
     const d = sampleFormData();
-    d.warnings = ['Demo mode: these numbers are simulated, not read from your photo. Connect the Worker to use real Gemini extraction.'];
-    d.confidence = null;
+    if (!isSample) { d.warnings = ['Demo mode: these numbers are simulated, not read from your photo. Connect the Worker to use real Gemini extraction.']; d.confidence = null; }
     return d;
   },
 };
@@ -580,8 +660,11 @@ function api(path, opts = {}) {
   });
 }
 const LiveStore = {
+  async listPlans(from, to) { return (await api(`/api/plans?from=${from}&to=${to}`)).plans.map(normalizePlan); },
+  async listPlanMeta() { return (await api('/api/plan-meta')).metas; },
+  async savePlan(month, meta, entries) { return api('/api/plans', { method: 'POST', body: JSON.stringify({ month, meta, entries }) }); },
   async list(from, to) { return (await api(`/api/records?from=${from}&to=${to}`)).records.map(normalizeRecord); },
-  async add(rec) { return normalizeRecord((await api('/api/records', { method: 'POST', body: JSON.stringify(rec) })).record); },
+  async add(rec) { const out = await api('/api/records', { method: 'POST', body: JSON.stringify(rec) }); return { record: normalizeRecord(out.record), replaced: out.replaced }; },
   async remove(id) { await api('/api/records/' + encodeURIComponent(id), { method: 'DELETE' }); },
   async extract(imageDataUrl) {
     const [, mime, b64] = imageDataUrl.match(/^data:([^;]+);base64,(.*)$/) || [];
@@ -590,7 +673,7 @@ const LiveStore = {
 };
 
 /* ---------------- App state ---------------- */
-const S = { live: false, health: null, records: [], lines: [], scan: { image: null, isSample: false, draft: null } };
+const S = { live: false, health: null, records: [], plans: [], metas: [], scan: { image: null, isSample: false }, planImport: null };
 const Store = () => (S.live ? LiveStore : DemoStore);
 
 async function detectMode() {
@@ -609,56 +692,65 @@ async function detectMode() {
   cs.className = 'status ' + (S.live ? 'good' : 'warn');
   cs.innerHTML = S.live ? '<i>✓</i>Connected' : '<i>▲</i>Demo mode';
   $('#connText').textContent = S.live
-    ? `Worker reachable. Firestore ${S.health.firestore ? 'ready' : 'not set up'}, Gemini ${S.health.gemini ? 'ready' : 'not set up'}.`
+    ? `Worker reachable. Firestore ready, Gemini ${S.health.gemini ? 'ready' : 'not set up'}.`
     : Settings.forceDemo
-      ? 'Demo mode is switched on. Records live only in this browser and extraction is simulated.'
-      : 'No Worker found at this address, so the app runs on sample records in this browser. Scans use simulated extraction.';
+      ? 'Demo mode is switched on. Plans and records live only in this browser and extraction is simulated.'
+      : 'No Worker found at this address, so the app runs on the September 2026 plan with simulated actuals, stored in this browser. Scans use simulated extraction.';
 }
 
 /* ---------------- Filters ---------------- */
-function setRange(days) {
-  const today = toISO(new Date());
-  $('#fTo').value = today;
-  $('#fFrom').value = days === 'mtd' ? today.slice(0, 8) + '01' : addDays(today, -(days - 1));
-  $$('#presets .btn').forEach(b => b.classList.toggle('on', b.dataset.days === String(days)));
-  store(SETTINGS_KEY + '.range', days);
+function renderPresets() {
+  const months = S.metas.map(m => m.month).sort().reverse().slice(0, 3);
+  $('#presets').innerHTML = months.map(m => `<button class="btn small" data-range="m:${m}">${monthLabel(m)}</button>`).join('')
+    + '<button class="btn small" data-range="7">Last 7 days</button><button class="btn small" data-range="mtd">Month to date</button>';
+  markPreset(store(SETTINGS_KEY + '.range'));
+}
+function markPreset(r) { $$('#presets .btn').forEach(b => b.classList.toggle('on', b.dataset.range === r)); }
+function applyRange(r) {
+  const t = today();
+  if (r && r.startsWith('m:')) { const m = r.slice(2); $('#fFrom').value = m + '-01'; $('#fTo').value = monthEnd(m); }
+  else if (r === 'mtd') { $('#fFrom').value = t.slice(0, 8) + '01'; $('#fTo').value = t; }
+  else { $('#fFrom').value = addDays(t, -6); $('#fTo').value = t; r = '7'; }
+  store(SETTINGS_KEY + '.range', r); markPreset(r);
 }
 
-async function loadRecords() {
+async function loadData() {
   const from = $('#fFrom').value, to = $('#fTo').value;
-  try { S.records = await Store().list(from, to); }
-  catch (e) { toast('Could not load records: ' + e.message); S.records = []; }
-  S.lines = [...new Set(S.records.map(r => r.line))].sort();
-  const allLines = [...new Set([...S.lines, ...DEMO_LINES.map(l => l.line)])].sort();
-  for (const id of ['#fLine', '#hLine']) {
-    const sel = $(id), cur = sel.value;
-    sel.innerHTML = '<option value="all">All lines</option>' + S.lines.map(l => `<option>${esc(l)}</option>`).join('');
-    sel.value = S.lines.includes(cur) ? cur : 'all';
-  }
-  $('#lineList').innerHTML = allLines.map(l => `<option value="${esc(l)}">`).join('');
+  try {
+    [S.records, S.plans, S.metas] = await Promise.all([Store().list(from, to), Store().listPlans(from, to), Store().listPlanMeta()]);
+  } catch (e) { toast('Could not load data: ' + e.message); S.records = []; S.plans = []; }
+  fillFilterOptions();
 }
-
-function filtered() {
-  const line = $('#fLine').value, shift = $('#fShift').value;
-  return S.records.filter(r => (line === 'all' || r.line === line) && (shift === 'all' || r.shift === shift));
+function fillFilterOptions() {
+  const machines = [...new Set([...S.plans, ...S.records].map(x => x.machine))].sort((a, b) => a.localeCompare(b, 'en', { numeric: true }));
+  const fm = $('#fMachine'), cur = fm.value;
+  fm.innerHTML = '<option value="all">All machines</option>' + machines.map(m => `<option>${esc(m)}</option>`).join('');
+  fm.value = machines.includes(cur) ? cur : 'all';
+  fillModelOptions();
+  $('#machineList').innerHTML = machines.map(m => `<option value="${esc(m)}">`).join('');
+}
+function fillModelOptions() {
+  const m = $('#fMachine').value, sel = $('#fModel'), cur = sel.value;
+  const models = [...new Set([...S.plans, ...S.records].filter(x => m === 'all' || x.machine === m).map(x => x.model))].sort();
+  sel.innerHTML = '<option value="all">All models</option>' + models.map(x => `<option>${esc(x)}</option>`).join('');
+  sel.value = models.includes(cur) ? cur : 'all';
+}
+function match(x) {
+  const m = $('#fMachine').value, mo = $('#fModel').value, sh = $('#fShift').value;
+  return (m === 'all' || x.machine === m) && (mo === 'all' || x.model === mo) && (sh === 'all' || x.shift === sh);
 }
 
 /* ---------------- Aggregation ---------------- */
-function byDate(recs, from, to) {
+function byDate(plans, recs, from, to) {
   const m = new Map();
-  for (let d = from; d <= to; d = addDays(d, 1)) m.set(d, { date: d, plan: 0, actual: 0, reject: 0, n: 0 });
-  recs.forEach(r => { const x = m.get(r.date); if (x) { x.plan += r.dailyPlan; x.actual += r.totalActual; x.reject += r.totalReject; x.n++; } });
+  for (let d = from; d <= to; d = addDays(d, 1)) m.set(d, { date: d, plan: 0, actual: 0, reject: 0, n: 0, pending: 0 });
+  plans.forEach(p => { const x = m.get(p.date); if (x) x.plan += p.qty; });
+  recs.forEach(r => { const x = m.get(r.date); if (x) { x.actual += r.totalActual; x.reject += r.totalReject; x.n++; } });
   return [...m.values()];
 }
-function byHour(recs) {
-  const m = new Map();
-  recs.forEach(r => r.hourly.forEach(h => {
-    const x = m.get(h.slot) || { slot: h.slot, plan: 0, actual: 0, reject: 0, remarks: [] };
-    x.plan += h.plan; x.actual += h.actual; x.reject += h.reject;
-    if (h.remark) x.remarks.push((recs.length > 1 ? r.line + ': ' : '') + h.remark);
-    m.set(h.slot, x);
-  }));
-  return [...m.values()];
+function pendingPcs(plans, recs) {
+  const have = new Set(recs.map(r => r.id)), t = today();
+  return plans.filter(p => p.date <= t && !have.has(p.id));
 }
 
 /* ---------------- Charts (hand-drawn SVG) ---------------- */
@@ -667,20 +759,19 @@ function niceMax(v) { if (v <= 0) return 10; const p = Math.pow(10, Math.floor(M
 function el(tag, attrs, parent) { const e = document.createElementNS(NS, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); if (parent) parent.appendChild(e); return e; }
 function barPath(x, y, w, h) { const r = Math.min(4, w / 2, h); return `M${x},${y + h}V${y + r}Q${x},${y} ${x + r},${y}H${x + w - r}Q${x + w},${y} ${x + w},${y + r}V${y + h}Z`; }
 function shortNum(v) { return v >= 10000 ? (v / 1000).toFixed(v >= 100000 ? 0 : 1).replace(/\.0$/, '') + 'k' : fmt(v); }
-
 function placeTip(host, tip, px, py) {
   const hw = host.clientWidth, tw = tip.offsetWidth, th = tip.offsetHeight;
   let x = px + 14; if (x + tw > hw) x = px - tw - 14; if (x < 0) x = Math.max(0, Math.min(hw - tw, px - tw / 2));
   let y = py - th - 10; if (y < 0) y = py + 16;
   tip.style.left = x + 'px'; tip.style.top = y + 'px';
 }
-function tipRows(title, plan, actual, extra = '') {
-  const p = pct(actual, plan);
+function tipRows(title, plan, actual, extra = '', noActual = false) {
   return `<b>${esc(title)}</b>
     <div class="row"><span><i class="sw plan"></i>Plan</span><span class="num">${fmt(plan)}</span></div>
+    ${noActual ? '<div class="row"><span><i class="sw actual"></i>Actual</span><span class="muted">no PCS yet</span></div>' : `
     <div class="row"><span><i class="sw actual"></i>Actual</span><span class="num">${fmt(actual)}</span></div>
     <div class="row"><span>Variance</span><span class="num">${deltaSpan(actual - plan)}</span></div>
-    <div class="row"><span>Achievement</span><span>${statusPill(p)}</span></div>${extra}`;
+    ${plan > 0 ? `<div class="row"><span>Achievement</span><span>${statusPill(pct(actual, plan))}</span></div>` : ''}`}${extra}`;
 }
 function frame(host, H) {
   host.innerHTML = '';
@@ -698,10 +789,10 @@ function yAxis(svg, m, W, H, max) {
   }
 }
 
-function groupedBars(host, rows, { label, tipTitle, tipExtra, showPct = true }) {
-  if (!rows.length || rows.every(r => !r.plan && !r.actual)) { host.innerHTML = '<div class="empty">No records for this selection.</div>'; return; }
+function groupedBars(host, rows, { label, tipTitle, tipExtra, isFuture = () => false }) {
+  if (!rows.length || rows.every(r => !r.plan && !r.actual)) { host.innerHTML = '<div class="empty">No plan or PCS records for this selection.</div>'; return; }
   const { W, H, svg, tip } = frame(host, 260);
-  const m = { l: 44, r: 6, t: showPct ? 22 : 10, b: 26 };
+  const m = { l: 44, r: 6, t: 22, b: 26 };
   const iw = W - m.l - m.r, ih = H - m.t - m.b;
   const max = niceMax(Math.max(...rows.map(r => Math.max(r.plan, r.actual))) * 1.05);
   yAxis(svg, m, W, H, max);
@@ -715,14 +806,11 @@ function groupedBars(host, rows, { label, tipTitle, tipExtra, showPct = true }) 
     if (r.plan > 0) el('path', { class: 'bar-plan', d: barPath(cx - bw - 1, y(r.plan), bw, m.t + ih - y(r.plan)) }, svg);
     if (r.actual > 0) el('path', { class: 'bar-actual', d: barPath(cx + 1, y(r.actual), bw, m.t + ih - y(r.actual)) }, svg);
     if (i % every === 0) el('text', { x: cx, y: H - 8, 'text-anchor': 'middle' }, svg).textContent = label(r);
-    if (showPct && r.plan > 0 && gw >= 34) {
-      const t = el('text', { x: cx, y: m.t - 8, 'text-anchor': 'middle', class: 'ach-label' }, svg);
-      t.textContent = Math.round(pct(r.actual, r.plan)) + '%';
-    }
+    if (r.plan > 0 && gw >= 30 && !isFuture(r)) el('text', { x: cx, y: m.t - 8, 'text-anchor': 'middle', class: 'ach-label' }, svg).textContent = Math.round(pct(r.actual, r.plan)) + '%';
     const hit = el('rect', { x: m.l + gw * i, y: 0, width: gw, height: H, fill: 'transparent' }, svg);
     const show = ev => {
       hl.setAttribute('x', m.l + gw * i); hl.setAttribute('visibility', 'visible');
-      tip.innerHTML = tipRows(tipTitle(r), r.plan, r.actual, tipExtra ? tipExtra(r) : ''); tip.hidden = false;
+      tip.innerHTML = tipRows(tipTitle(r), r.plan, r.actual, tipExtra ? tipExtra(r) : '', isFuture(r)); tip.hidden = false;
       const b = host.getBoundingClientRect(); placeTip(host, tip, ev.clientX - b.left, ev.clientY - b.top);
     };
     hit.addEventListener('pointermove', show); hit.addEventListener('pointerdown', show);
@@ -731,9 +819,12 @@ function groupedBars(host, rows, { label, tipTitle, tipExtra, showPct = true }) 
 }
 
 function cumulativeLines(host, rows) {
-  if (!rows.length || rows.every(r => !r.plan && !r.actual)) { host.innerHTML = '<div class="empty">No records for this selection.</div>'; $('#cumLegend').innerHTML = ''; return; }
+  if (!rows.length || rows.every(r => !r.plan && !r.actual)) { host.innerHTML = '<div class="empty">No plan or PCS records for this selection.</div>'; $('#cumLegend').innerHTML = ''; return; }
+  const t = today();
   let cp = 0, ca = 0;
-  const pts = rows.map(r => ({ ...r, cp: (cp += r.plan), ca: (ca += r.actual) }));
+  const pts = rows.map(r => ({ ...r, cp: (cp += r.plan), ca: r.date <= t ? (ca += r.actual) : null }));
+  const lastA = pts.reduce((k, p, i) => (p.ca !== null ? i : k), -1);
+  const planToDate = lastA >= 0 ? pts[lastA].cp : 0;
   const { W, H, svg, tip } = frame(host, 260);
   const m = { l: 44, r: 10, t: 10, b: 26 };
   const iw = W - m.l - m.r, ih = H - m.t - m.b;
@@ -743,104 +834,225 @@ function cumulativeLines(host, rows) {
   const X = i => m.l + (n > 1 ? step * i : iw / 2), Y = v => m.t + ih - (v / max) * ih;
   const every = Math.max(1, Math.ceil(64 / Math.max(step, 1)));
   pts.forEach((p, i) => { if (i % every === 0) el('text', { x: X(i), y: H - 8, 'text-anchor': 'middle' }, svg).textContent = shortDate(p.date); });
-  const path = k => pts.map((p, i) => `${i ? 'L' : 'M'}${X(i).toFixed(1)},${Y(p[k]).toFixed(1)}`).join('');
-  el('path', { class: 'area-actual', d: path('ca') + `L${X(n - 1)},${Y(0)}L${X(0)},${Y(0)}Z` }, svg);
-  el('path', { class: 'ln-plan', d: path('cp') }, svg);
-  el('path', { class: 'ln-actual', d: path('ca') }, svg);
+  const path = (k, upto) => pts.slice(0, upto + 1).map((p, i) => `${i ? 'L' : 'M'}${X(i).toFixed(1)},${Y(p[k]).toFixed(1)}`).join('');
+  if (lastA > 0) el('path', { class: 'area-actual', d: path('ca', lastA) + `L${X(lastA)},${Y(0)}L${X(0)},${Y(0)}Z` }, svg);
+  el('path', { class: 'ln-plan', d: path('cp', n - 1) }, svg);
+  if (lastA >= 0) {
+    el('path', { class: 'ln-actual', d: path('ca', lastA) }, svg);
+    el('circle', { class: 'dot-actual', cx: X(lastA), cy: Y(pts[lastA].ca), r: 4.5 }, svg);
+  }
   el('circle', { class: 'dot-plan', cx: X(n - 1), cy: Y(cp), r: 4 }, svg);
-  el('circle', { class: 'dot-actual', cx: X(n - 1), cy: Y(ca), r: 4.5 }, svg);
   const xh = el('line', { class: 'xhair', y1: m.t, y2: m.t + ih, visibility: 'hidden' }, svg);
   const dp = el('circle', { class: 'dot-plan', r: 4, visibility: 'hidden' }, svg);
   const da = el('circle', { class: 'dot-actual', r: 4.5, visibility: 'hidden' }, svg);
   const hit = el('rect', { x: m.l, y: 0, width: iw, height: H, fill: 'transparent' }, svg);
   const move = ev => {
     const b = host.getBoundingClientRect(), sx = W / b.width;
-    const x = (ev.clientX - b.left) * sx;
-    const i = Math.max(0, Math.min(n - 1, Math.round((x - m.l) / (step || 1))));
+    const i = Math.max(0, Math.min(n - 1, Math.round(((ev.clientX - b.left) * sx - m.l) / (step || 1))));
     const p = pts[i];
-    [xh].forEach(l => { l.setAttribute('x1', X(i)); l.setAttribute('x2', X(i)); l.setAttribute('visibility', 'visible'); });
+    xh.setAttribute('x1', X(i)); xh.setAttribute('x2', X(i)); xh.setAttribute('visibility', 'visible');
     dp.setAttribute('cx', X(i)); dp.setAttribute('cy', Y(p.cp)); dp.setAttribute('visibility', 'visible');
-    da.setAttribute('cx', X(i)); da.setAttribute('cy', Y(p.ca)); da.setAttribute('visibility', 'visible');
-    tip.innerHTML = tipRows('To ' + dowDate(p.date) + ' (cumulative)', p.cp, p.ca); tip.hidden = false;
+    if (p.ca !== null) { da.setAttribute('cx', X(i)); da.setAttribute('cy', Y(p.ca)); da.setAttribute('visibility', 'visible'); } else da.setAttribute('visibility', 'hidden');
+    tip.innerHTML = tipRows('Up to ' + dowDate(p.date), p.cp, p.ca ?? 0, '', p.ca === null); tip.hidden = false;
     placeTip(host, tip, X(i) / sx, ev.clientY - b.top);
   };
   hit.addEventListener('pointermove', move); hit.addEventListener('pointerdown', move);
   hit.addEventListener('pointerleave', () => { tip.hidden = true; [xh, dp, da].forEach(e => e.setAttribute('visibility', 'hidden')); });
-  $('#cumLegend').innerHTML = `<span><i class="sw line-plan"></i>Plan <b class="num">${fmt(cp)}</b></span><span><i class="sw line-actual"></i>Actual <b class="num">${fmt(ca)}</b></span>`;
+  $('#cumLegend').innerHTML = `<span><i class="sw line-plan"></i>Plan <b class="num">${fmt(cp)}</b>${planToDate < cp ? ` <span class="muted">(${fmt(planToDate)} to date)</span>` : ''}</span><span><i class="sw line-actual"></i>Actual <b class="num">${fmt(ca)}</b></span>`;
 }
 
-/* ---------------- Dashboard render ---------------- */
+/* ---------------- Dashboard ---------------- */
 function renderDashboard() {
-  const from = $('#fFrom').value, to = $('#fTo').value;
-  const recs = filtered();
-  const days = byDate(recs, from, to);
-  const worked = days.filter(d => d.n);
-  const plan = recs.reduce((s, r) => s + r.dailyPlan, 0);
+  const from = $('#fFrom').value, to = $('#fTo').value, t = today();
+  const plans = S.plans.filter(match), recs = S.records.filter(match);
+  const days = byDate(plans, recs, from, to);
+  const past = days.filter(d => d.date <= t);
+  const planAll = plans.reduce((s, p) => s + p.qty, 0);
+  const planToDate = past.reduce((s, d) => s + d.plan, 0);
   const actual = recs.reduce((s, r) => s + r.totalActual, 0);
   const reject = recs.reduce((s, r) => s + r.totalReject, 0);
   const downtime = recs.reduce((s, r) => s + r.downtimeMin, 0);
-  const p = pct(actual, plan), st = statusOf(p);
-  const daysMet = worked.filter(d => d.actual >= d.plan).length;
-  const last = worked[worked.length - 1];
+  const p = pct(actual, planToDate), st = statusOf(p);
+  const planned = past.filter(d => d.plan > 0);
+  const daysMet = planned.filter(d => d.actual >= d.plan).length;
+  const pend = pendingPcs(plans, recs);
 
   $('#kpis').innerHTML = `
-    <div class="kpi"><span class="eyebrow">Output plan</span><span class="v num">${fmt(plan)}<small>pcs</small></span><span class="s">${worked.length} production day${worked.length === 1 ? '' : 's'}</span></div>
-    <div class="kpi"><span class="eyebrow">Output actual</span><span class="v num">${fmt(actual)}<small>pcs</small></span><span class="s">Variance ${deltaSpan(actual - plan)} pcs</span></div>
-    <div class="kpi"><span class="eyebrow">Achievement</span><span class="v num">${plan ? p.toFixed(1) : '–'}<small>%</small></span><span class="s">${plan ? `<span class="status ${st.cls}"><i>${st.icon}</i>${st.label}</span>` : 'No plan in range'}</span></div>
-    <div class="kpi"><span class="eyebrow">Days on target</span><span class="v num">${daysMet}<small>/ ${worked.length}</small></span><span class="s">${last ? `Latest ${shortDate(last.date)}: ${pct(last.actual, last.plan).toFixed(1)}%` : '—'}</span></div>
+    <div class="kpi"><span class="eyebrow">Plan to date</span><span class="v num">${fmt(planToDate)}<small>pcs</small></span><span class="s">${planAll > planToDate ? `Full range ${fmt(planAll)} pcs` : `${planned.length} planned days`}</span></div>
+    <div class="kpi"><span class="eyebrow">Actual output</span><span class="v num">${fmt(actual)}<small>pcs</small></span><span class="s">Variance ${deltaSpan(actual - planToDate)} pcs</span></div>
+    <div class="kpi"><span class="eyebrow">Achievement</span><span class="v num">${planToDate ? p.toFixed(1) : '–'}<small>%</small></span><span class="s">${planToDate ? `<span class="status ${st.cls}"><i>${st.icon}</i>${st.label}</span>` : 'No plan to date'}</span></div>
+    <div class="kpi"><span class="eyebrow">Days on target</span><span class="v num">${daysMet}<small>/ ${planned.length}</small></span><span class="s">Days where actual ≥ plan</span></div>
+    <div class="kpi"><span class="eyebrow">PCS not submitted</span><span class="v num">${pend.length}</span><span class="s">${pend.length ? `<span class="status warn"><i>▲</i>${fmt(pend.reduce((s, x) => s + x.qty, 0))} pcs planned</span>` : '<span class="status good"><i>✓</i>All planned shifts in</span>'}</span></div>
     <div class="kpi"><span class="eyebrow">Reject rate</span><span class="v num">${actual ? ((reject / actual) * 100).toFixed(2) : '0.00'}<small>%</small></span><span class="s">${fmt(reject)} pcs · downtime ${fmt(downtime)} min</span></div>`;
 
-  cumulativeLines($('#chartCum'), worked.length ? days : []);
+  cumulativeLines($('#chartCum'), days);
 
-  groupedBars($('#chartDaily'), worked.length ? days : [], {
+  groupedBars($('#chartDaily'), days, {
     label: d => shortDate(d.date),
     tipTitle: d => dowDate(d.date),
-    tipExtra: d => d.n ? `<div class="row"><span>Reject</span><span class="num">${fmt(d.reject)}</span></div>` : '<div class="row"><span>No production</span><span></span></div>',
+    isFuture: d => d.date > t,
+    tipExtra: d => (d.n ? `<div class="row"><span>Reject</span><span class="num">${fmt(d.reject)}</span></div>` : '') + (d.plan === 0 && d.date <= t ? '<div class="row"><span class="muted">No plan this day</span><span></span></div>' : ''),
   });
 
-  const drows = worked.slice().reverse();
+  const drows = days.filter(d => d.plan || d.actual).reverse();
   $('#tblDaily').innerHTML = `<thead><tr><th>Date</th><th class="r">Plan</th><th class="r">Actual</th><th class="r">Variance</th><th class="r">Reject</th><th class="r">Achievement</th></tr></thead>
-    <tbody>${drows.map(d => `<tr><td>${dowDate(d.date)}</td><td class="r num">${fmt(d.plan)}</td><td class="r num">${fmt(d.actual)}</td><td class="r num">${deltaSpan(d.actual - d.plan)}</td><td class="r num">${fmt(d.reject)}</td><td class="r">${statusPill(pct(d.actual, d.plan))}</td></tr>`).join('') || '<tr><td colspan="6" class="empty">No records.</td></tr>'}</tbody>
-    ${drows.length ? `<tfoot><tr><td>Total</td><td class="r num">${fmt(plan)}</td><td class="r num">${fmt(actual)}</td><td class="r num">${deltaSpan(actual - plan)}</td><td class="r num">${fmt(reject)}</td><td class="r">${statusPill(p)}</td></tr></tfoot>` : ''}`;
+    <tbody>${drows.map(d => `<tr><td>${dowDate(d.date)}</td><td class="r num">${fmt(d.plan)}</td>${d.date > t ? '<td class="r muted" colspan="4">Upcoming</td>' : `<td class="r num">${fmt(d.actual)}</td><td class="r num">${deltaSpan(d.actual - d.plan)}</td><td class="r num">${fmt(d.reject)}</td><td class="r">${d.plan ? statusPill(pct(d.actual, d.plan)) : '<span class="muted">Unplanned</span>'}</td>`}</tr>`).join('') || '<tr><td colspan="6" class="empty">No plan or records.</td></tr>'}</tbody>
+    ${drows.length ? `<tfoot><tr><td>Total to date</td><td class="r num">${fmt(planToDate)}</td><td class="r num">${fmt(actual)}</td><td class="r num">${deltaSpan(actual - planToDate)}</td><td class="r num">${fmt(reject)}</td><td class="r">${planToDate ? statusPill(p) : ''}</td></tr></tfoot>` : ''}`;
 
-  // Hourly: default to the latest date with data
   const hd = $('#hDate');
-  if (!hd.value || hd.value < from || hd.value > to || !recs.some(r => r.date === hd.value)) hd.value = last ? last.date : to;
-  if ($('#hLine').value === 'all' && $('#fLine').value !== 'all') $('#hLine').value = $('#fLine').value;
+  if (!hd.value || hd.value < from || hd.value > to) {
+    const lastPast = [...past].reverse().find(d => d.actual > 0 || d.plan > 0);
+    hd.value = lastPast ? lastPast.date : from;
+  }
   renderHourly();
-
-  // By line
-  const lm = new Map();
-  S.records.filter(r => $('#fShift').value === 'all' || r.shift === $('#fShift').value).forEach(r => {
-    const x = lm.get(r.line) || { line: r.line, plan: 0, actual: 0, reject: 0, down: 0, part: r.partNo };
-    x.plan += r.dailyPlan; x.actual += r.totalActual; x.reject += r.totalReject; x.down += r.downtimeMin; lm.set(r.line, x);
-  });
-  const lrows = [...lm.values()].sort((a, b) => a.line.localeCompare(b.line));
-  $('#tblLines').innerHTML = `<thead><tr><th>Line</th><th>Part</th><th class="r">Plan</th><th class="r">Actual</th><th class="r">Variance</th><th class="r">Downtime</th><th class="r">Achievement</th></tr></thead>
-    <tbody>${lrows.map(l => { const lp = pct(l.actual, l.plan); return `<tr><td><b>${esc(l.line)}</b></td><td>${esc(l.part)}</td><td class="r num">${fmt(l.plan)}</td><td class="r num">${fmt(l.actual)}</td><td class="r num">${deltaSpan(l.actual - l.plan)}</td><td class="r num">${fmt(l.down)} min</td><td class="r"><div class="bar-cell"><span class="mini"><i style="width:${Math.min(100, lp)}%"></i></span>${statusPill(lp)}</div></td></tr>`; }).join('') || '<tr><td colspan="7" class="empty">No records.</td></tr>'}</tbody>`;
+  renderMachineTable(plans, recs);
 }
 
 function renderHourly() {
-  const date = $('#hDate').value, line = $('#hLine').value, shift = $('#fShift').value;
-  const recs = S.records.filter(r => r.date === date && (line === 'all' || r.line === line) && (shift === 'all' || r.shift === shift));
-  const hours = byHour(recs);
-  groupedBars($('#chartHourly'), hours, {
-    label: h => h.slot.split('-')[0],
-    tipTitle: h => h.slot + (line === 'all' ? ' · all lines' : ' · ' + line),
-    tipExtra: h => (h.reject ? `<div class="row"><span>Reject</span><span class="num">${fmt(h.reject)}</span></div>` : '') + (h.remarks.length ? `<div style="margin-top:4px;color:var(--ink-2);white-space:normal;max-width:220px">${h.remarks.map(esc).join('<br>')}</div>` : ''),
+  const date = $('#hDate').value;
+  const plans = S.plans.filter(p => p.date === date && match(p));
+  const recs = S.records.filter(r => r.date === date && match(r));
+  const shiftF = $('#fShift').value, shifts = shiftF === 'all' ? ['Day', 'Night'] : [shiftF];
+  const slots = new Map(); // key shift|hour
+  shifts.forEach(s => { for (let i = 0; i < 12; i++) { const h = (shiftStart(s) + i) % 24; slots.set(s + '|' + h, { shift: s, hour: h, slot: slotLabel(h), plan: 0, actual: 0, reject: 0, remarks: [] }); } });
+  const slotFor = (s, h) => { const k = s + '|' + h; if (!slots.has(k)) slots.set(k, { shift: s, hour: h, slot: slotLabel(h), plan: 0, actual: 0, reject: 0, remarks: [] }); return slots.get(k); };
+  const plannedIds = new Set();
+  plans.forEach(p => { plannedIds.add(p.id); hourlyPlan(p).forEach(h => (slotFor(p.shift, h.hour).plan += h.plan)); });
+  recs.forEach(r => r.hourly.forEach(h => {
+    const hr = slotHour(h.slot); if (hr === null) return;
+    const x = slotFor(r.shift, hr);
+    x.actual += h.actual; x.reject += h.reject;
+    if (!plannedIds.has(r.id)) x.plan += h.plan; // unplanned run: use the PCS form's own plan
+    if (h.remark) x.remarks.push((recs.length > 1 ? `${r.machine} ${r.model}: ` : '') + h.remark);
+  }));
+  const order = s => shifts.indexOf(s.shift) * 100 + ((s.hour - shiftStart(s.shift) + 24) % 24);
+  const rows = [...slots.values()].sort((a, b) => order(a) - order(b));
+  // trim empty slots at the end of each shift
+  const keep = rows.filter(r => r.plan || r.actual || rows.some(o => o.shift === r.shift && order(o) > order(r) && (o.plan || o.actual)));
+  const future = date > today();
+  const machine = $('#fMachine').value, model = $('#fModel').value;
+  $('#hourHint').innerHTML = `<b>${date ? dowDate(date) : ''}</b> · ${machine === 'all' ? 'all machines' : esc(machine)} · ${model === 'all' ? 'all models' : esc(model)} · ${plans.length} planned run${plans.length === 1 ? '' : 's'}, ${recs.length} PCS record${recs.length === 1 ? '' : 's'}` + (plans.length === 1 ? ` · ${fmt(plans[0].ratePerHour)} pcs/hr` : '');
+  groupedBars($('#chartHourly'), keep, {
+    label: h => (shiftF === 'all' ? (h.shift === 'Night' ? 'N' : 'D') : '') + String(h.hour).padStart(2, '0'),
+    tipTitle: h => `${h.slot} · ${h.shift} shift`,
+    isFuture: () => future,
+    tipExtra: h => (h.reject ? `<div class="row"><span>Reject</span><span class="num">${fmt(h.reject)}</span></div>` : '') + (h.remarks.length ? `<div style="margin-top:4px;color:var(--ink-2);white-space:normal;max-width:240px">${h.remarks.map(esc).join('<br>')}</div>` : ''),
   });
-  let cp = 0, ca = 0;
+  let cp = 0, ca = 0, lastShift = null;
   $('#tblHourly').innerHTML = `<thead><tr><th>Hour</th><th class="r">Plan</th><th class="r">Actual</th><th class="r">Variance</th><th class="r">Cum. plan</th><th class="r">Cum. actual</th><th class="r">Cum. %</th><th>Remarks</th></tr></thead>
-    <tbody>${hours.map(h => { cp += h.plan; ca += h.actual; return `<tr><td class="num">${esc(h.slot)}</td><td class="r num">${fmt(h.plan)}</td><td class="r num">${fmt(h.actual)}</td><td class="r num">${deltaSpan(h.actual - h.plan)}</td><td class="r num">${fmt(cp)}</td><td class="r num">${fmt(ca)}</td><td class="r">${statusPill(pct(ca, cp))}</td><td>${esc(h.remarks.join('; '))}</td></tr>`; }).join('') || `<tr><td colspan="8" class="empty">No PCS record for ${date ? dowDate(date) : 'this date'}.</td></tr>`}</tbody>`;
+    <tbody>${keep.map(h => {
+      if (h.shift !== lastShift) { cp = 0; ca = 0; }
+      const head = h.shift !== lastShift && shifts.length > 1 ? `<tr class="group"><td colspan="8">${h.shift} shift</td></tr>` : '';
+      lastShift = h.shift; cp += h.plan; ca += h.actual;
+      return head + `<tr><td class="num">${shiftTag(h.shift)} ${esc(h.slot)}</td><td class="r num">${fmt(h.plan)}</td><td class="r num">${fmt(h.actual)}</td><td class="r num">${deltaSpan(h.actual - h.plan)}</td><td class="r num">${fmt(cp)}</td><td class="r num">${fmt(ca)}</td><td class="r">${cp ? statusPill(pct(ca, cp)) : ''}</td><td style="white-space:normal;min-width:160px">${esc(h.remarks.join('; '))}</td></tr>`;
+    }).join('') || `<tr><td colspan="8" class="empty">No plan or PCS for ${date ? dowDate(date) : 'this date'}.</td></tr>`}</tbody>`;
 }
+
+function renderMachineTable(plans, recs) {
+  const t = today(), pend = new Set(pendingPcs(plans, recs).map(p => p.id));
+  const m = new Map();
+  const get = (machine, model) => {
+    if (!m.has(machine)) m.set(machine, { machine, models: new Map() });
+    const g = m.get(machine);
+    if (!g.models.has(model)) g.models.set(model, { model, rate: 0, planAll: 0, plan: 0, actual: 0, reject: 0, pend: 0 });
+    return g.models.get(model);
+  };
+  plans.forEach(p => { const x = get(p.machine, p.model); x.rate = p.ratePerHour; x.planAll += p.qty; if (p.date <= t) x.plan += p.qty; if (pend.has(p.id)) x.pend++; });
+  recs.forEach(r => { const x = get(r.machine, r.model); x.actual += r.totalActual; x.reject += r.totalReject; });
+  const groups = [...m.values()].sort((a, b) => a.machine.localeCompare(b.machine, 'en', { numeric: true }));
+  $('#machineHint').textContent = `${groups.length} machines · plan counted up to today`;
+  const row = (x, cls = '') => `<tr class="${cls}"><td>${cls ? esc(x.machine) : ''}</td><td>${cls ? `<span class="muted">${x.n} models</span>` : esc(x.model)}</td><td class="r num">${cls ? '' : fmt(x.rate)}</td><td class="r num">${fmt(x.planAll)}</td><td class="r num">${fmt(x.plan)}</td><td class="r num">${fmt(x.actual)}</td><td class="r num">${deltaSpan(x.actual - x.plan)}</td><td class="r num">${x.pend ? `<span class="status warn"><i>▲</i>${x.pend}</span>` : '—'}</td><td class="r">${x.plan ? `<div class="bar-cell"><span class="mini"><i style="width:${Math.min(100, pct(x.actual, x.plan))}%"></i></span>${statusPill(pct(x.actual, x.plan))}</div>` : '<span class="muted">No plan to date</span>'}</td></tr>`;
+  $('#tblMachines').innerHTML = `<thead><tr><th>Machine</th><th>Model</th><th class="r">Pcs/hr</th><th class="r">Month plan</th><th class="r">Plan to date</th><th class="r">Actual</th><th class="r">Variance</th><th class="r">PCS missing</th><th class="r">Achievement</th></tr></thead>
+    <tbody>${groups.map(g => {
+      const ms = [...g.models.values()].sort((a, b) => a.model.localeCompare(b.model));
+      const sum = ms.reduce((s, x) => ({ machine: g.machine, n: ms.length, planAll: s.planAll + x.planAll, plan: s.plan + x.plan, actual: s.actual + x.actual, pend: s.pend + x.pend }), { planAll: 0, plan: 0, actual: 0, pend: 0 });
+      return row(sum, 'group') + ms.map(x => row(x)).join('');
+    }).join('') || '<tr><td colspan="9" class="empty">No plan or records in this range.</td></tr>'}</tbody>`;
+}
+
+/* ---------------- Monthly plan import ---------------- */
+function loadXLSX() {
+  if (window.XLSX) return Promise.resolve(window.XLSX);
+  return new Promise((res, rej) => {
+    const s = document.createElement('script'); s.src = XLSX_SRC;
+    s.onload = () => res(window.XLSX); s.onerror = () => rej(new Error('Could not load the Excel reader. Check the internet connection and try again.'));
+    document.head.appendChild(s);
+  });
+}
+let planWb = null, planFileName = '';
+$('#planFile').addEventListener('change', async e => {
+  const f = e.target.files[0]; if (!f) return;
+  planFileName = f.name; $('#planFileName').textContent = f.name; $('#planProgress').hidden = false;
+  try {
+    const XLSX = await loadXLSX();
+    planWb = XLSX.read(await f.arrayBuffer(), { type: 'array' });
+    const best = PlanParser.pickSheet(XLSX, planWb);
+    const hidden = (planWb.Workbook && planWb.Workbook.Sheets) || [];
+    $('#planSheet').innerHTML = planWb.SheetNames.filter((n, i) => !(hidden[i] && hidden[i].Hidden)).map(n => `<option ${n === best ? 'selected' : ''}>${esc(n)}</option>`).join('');
+    $('#sheetField').hidden = false;
+    parsePlanSheet(best);
+  } catch (err) { toast(err.message); $('#planPreview').hidden = true; }
+  finally { $('#planProgress').hidden = true; e.target.value = ''; }
+});
+$('#planSheet').addEventListener('change', e => parsePlanSheet(e.target.value));
+function parsePlanSheet(name) {
+  try { S.planImport = PlanParser.parseWorkbook(window.XLSX, planWb, name); renderPlanPreview(); }
+  catch (err) { toast(err.message); $('#planPreview').hidden = true; }
+}
+function renderPlanPreview() {
+  const P = S.planImport; $('#planPreview').hidden = false;
+  const total = P.entries.reduce((s, e) => s + e.qty, 0);
+  const day = P.entries.filter(e => e.shift === 'Day').reduce((s, e) => s + e.qty, 0);
+  const active = P.models.filter(m => m.total > 0);
+  $('#planTitle').textContent = P.info.title || P.sheet;
+  $('#btnSavePlan').textContent = `Save ${monthLabel(P.month)} plan`;
+  $('#planChips').innerHTML = `<span>Sheet <b>${esc(P.sheet)}</b></span><span>Doc <b>${esc(P.info.docNo || '—')}</b></span><span>Revision <b>${esc(P.info.revision || '—')}</b></span><span>Issued <b>${esc(P.info.issued || '—')}</b></span><span>Dates <b>${shortDate(P.dates[0])} – ${shortDate(P.dates[P.dates.length - 1])}</b></span>`;
+  const other = P.entries.filter(e => !e.date.startsWith(P.month)).length;
+  $('#planNotices').innerHTML = (P.warnings.length ? `<div class="notice warn"><span>▲</span><div><b>Cells that could not be read</b><ul>${P.warnings.map(w => `<li>${esc(w)}</li>`).join('')}</ul></div></div>` : '')
+    + (other ? `<div class="notice info"><span>i</span><div>${other} entries fall outside ${monthLabel(P.month)} (e.g. the 1st of next month). They are left out; import them with next month's plan.</div></div>` : '');
+  $('#planKpis').innerHTML = `
+    <div class="kpi"><span class="eyebrow">Total plan</span><span class="v num">${fmt(total)}<small>pcs</small></span><span class="s">${P.entries.length} shift runs</span></div>
+    <div class="kpi"><span class="eyebrow">Day shift (D)</span><span class="v num">${fmt(day)}<small>pcs</small></span><span class="s">${P.entries.filter(e => e.shift === 'Day').length} runs</span></div>
+    <div class="kpi"><span class="eyebrow">Night shift (N)</span><span class="v num">${fmt(total - day)}<small>pcs</small></span><span class="s">${P.entries.filter(e => e.shift === 'Night').length} runs</span></div>
+    <div class="kpi"><span class="eyebrow">Models planned</span><span class="v num">${active.length}<small>/ ${P.models.length}</small></span><span class="s">${new Set(active.map(m => m.machine)).size} machines</span></div>`;
+  let lastM = null;
+  $('#tblPlan').innerHTML = `<thead><tr><th>Machine</th><th>Model</th><th class="r">Pcs/hr</th><th>Operator</th><th class="r">Day (D)</th><th class="r">Night (N)</th><th class="r">Total</th><th class="r">Days</th></tr></thead>
+    <tbody>${active.map(m => {
+      const es = P.entries.filter(e => e.machine === m.machine && e.model === m.model);
+      const d = es.filter(e => e.shift === 'Day').reduce((s, e) => s + e.qty, 0), n = m.total - d;
+      const showM = m.machine !== lastM; lastM = m.machine;
+      return `<tr><td>${showM ? `<b>${esc(m.machine)}</b>` : ''}</td><td>${esc(m.model)}</td><td class="r num">${m.rateNote ? esc(m.rateNote) : fmt(m.ratePerHour)}</td><td>${esc(m.operator) || '<span class="muted">—</span>'}</td><td class="r num">${d ? fmt(d) : '<span class="muted">—</span>'}</td><td class="r num">${n ? fmt(n) : '<span class="muted">—</span>'}</td><td class="r num"><b>${fmt(m.total)}</b></td><td class="r num">${new Set(es.map(e => e.date)).size}</td></tr>`;
+    }).join('')}</tbody>`;
+}
+$('#btnSavePlan').addEventListener('click', async () => {
+  const P = S.planImport; if (!P) return;
+  const btn = $('#btnSavePlan'); btn.disabled = true;
+  try {
+    const meta = { sheet: P.sheet, title: P.info.title, revision: P.info.revision, docNo: P.info.docNo, issued: P.info.issued, fileName: planFileName };
+    const res = await Store().savePlan(P.month, meta, P.entries.filter(e => e.date.startsWith(P.month)));
+    toast(`Saved ${res.saved} plan entries for ${monthLabel(P.month)}`);
+    applyRange('m:' + P.month);
+    await refresh(); renderPresets(); renderPlanMeta();
+  } catch (e) { toast('Save failed: ' + e.message); }
+  finally { btn.disabled = false; }
+});
+function renderPlanMeta() {
+  $('#tblPlanMeta').innerHTML = `<thead><tr><th>Month</th><th>Sheet</th><th>Revision</th><th class="r">Runs</th><th class="r">Total plan</th><th>File</th><th>Imported</th><th></th></tr></thead>
+    <tbody>${S.metas.map(m => `<tr><td><b>${monthLabel(m.month)}</b></td><td>${esc(m.sheet)}</td><td>${esc(m.revision)}</td><td class="r num">${fmt(m.entries)}</td><td class="r num">${fmt(m.total)}</td><td style="white-space:normal">${esc(m.fileName)}</td><td>${m.importedAt ? new Date(m.importedAt).toLocaleDateString('en-MY') : ''}</td><td class="r"><button class="btn small" data-month="${esc(m.month)}">View on dashboard</button></td></tr>`).join('') || '<tr><td colspan="8" class="empty">No plan imported yet.</td></tr>'}</tbody>`;
+}
+$('#tblPlanMeta').addEventListener('click', async e => {
+  const b = e.target.closest('[data-month]'); if (!b) return;
+  applyRange('m:' + b.dataset.month); await refresh(); showView('dashboard');
+});
 
 /* ---------------- Records ---------------- */
 function renderRecords() {
-  const rows = S.records.slice().sort((a, b) => b.date.localeCompare(a.date) || a.line.localeCompare(b.line));
+  const rows = S.records.slice().sort((a, b) => b.date.localeCompare(a.date) || a.machine.localeCompare(b.machine, 'en', { numeric: true }) || a.shift.localeCompare(b.shift));
+  const planById = new Map(S.plans.map(p => [p.id, p]));
   $('#recHint').textContent = `${rows.length} records · ${$('#fFrom').value} to ${$('#fTo').value}`;
-  $('#tblRecords').innerHTML = `<thead><tr><th>Date</th><th>Line</th><th>Shift</th><th>Part</th><th class="r">Plan</th><th class="r">Actual</th><th class="r">Achievement</th><th>Source</th><th></th></tr></thead>
-    <tbody>${rows.map(r => `<tr data-id="${esc(r.id)}"><td>${dowDate(r.date)}</td><td><b>${esc(r.line)}</b></td><td>${esc(r.shift)}</td><td>${esc(r.partNo)}</td><td class="r num">${fmt(r.dailyPlan)}</td><td class="r num">${fmt(r.totalActual)}</td><td class="r">${statusPill(pct(r.totalActual, r.dailyPlan))}</td><td>${r.source === 'scan' ? 'Scan' : r.source === 'demo' ? 'Sample' : 'Manual'}</td>
-      <td class="r"><button class="btn small ghost" data-act="view">Hours</button><button class="btn small ghost danger" data-act="del">Delete</button></td></tr>`).join('') || '<tr><td colspan="9" class="empty">No records in this date range.</td></tr>'}</tbody>`;
+  $('#tblRecords').innerHTML = `<thead><tr><th>Date</th><th>Shift</th><th>Machine</th><th>Model</th><th class="r">Plan</th><th class="r">Actual</th><th class="r">Achievement</th><th>Source</th><th></th></tr></thead>
+    <tbody>${rows.map(r => { const pl = planById.get(r.id)?.qty ?? r.planQty; return `<tr data-id="${esc(r.id)}"><td>${dowDate(r.date)}</td><td>${shiftTag(r.shift)}</td><td><b>${esc(r.machine)}</b></td><td>${esc(r.model)}</td><td class="r num">${pl ? fmt(pl) : '<span class="muted">Unplanned</span>'}</td><td class="r num">${fmt(r.totalActual)}</td><td class="r">${pl ? statusPill(pct(r.totalActual, pl)) : ''}</td><td>${r.source === 'scan' ? 'Scan' : r.source === 'demo' ? 'Sample' : 'Manual'}</td>
+      <td class="r"><button class="btn small ghost" data-act="view">Hours</button><button class="btn small ghost danger" data-act="del">Delete</button></td></tr>`; }).join('') || '<tr><td colspan="9" class="empty">No PCS records in this date range.</td></tr>'}</tbody>`;
 }
 $('#tblRecords').addEventListener('click', async ev => {
   const b = ev.target.closest('button'); if (!b) return;
@@ -850,7 +1062,7 @@ $('#tblRecords').addEventListener('click', async ev => {
     if (next && next.classList.contains('detail')) { next.remove(); return; }
     const d = document.createElement('tr'); d.className = 'detail';
     d.innerHTML = `<td colspan="9"><div class="table-wrap"><table><thead><tr><th>Hour</th><th class="r">Plan</th><th class="r">Actual</th><th class="r">Reject</th><th>Remarks</th></tr></thead><tbody>${rec.hourly.map(h => `<tr><td class="num">${esc(h.slot)}</td><td class="r num">${fmt(h.plan)}</td><td class="r num">${fmt(h.actual)}</td><td class="r num">${fmt(h.reject)}</td><td>${esc(h.remark)}</td></tr>`).join('')}</tbody></table></div>
-      <div style="margin-top:8px;color:var(--ink-2);font-size:12px">Supervisor: ${esc(rec.supervisor || '—')} · Downtime ${fmt(rec.downtimeMin)} min · Part ${esc(rec.partNo)} ${esc(rec.partName)}</div></td>`;
+      <div style="margin-top:8px;color:var(--ink-2);font-size:12px">Operator: ${esc(rec.operator || '—')} · Supervisor: ${esc(rec.supervisor || '—')} · Downtime ${fmt(rec.downtimeMin)} min</div></td>`;
     tr.after(d);
   } else if (b.dataset.act === 'del') {
     if (!b.dataset.armed) { b.dataset.armed = '1'; b.textContent = 'Confirm delete'; setTimeout(() => { if (b.isConnected) { delete b.dataset.armed; b.textContent = 'Delete'; } }, 3000); return; }
@@ -875,10 +1087,7 @@ function setImage(dataUrl, isSample) {
   const p = $('#preview'); p.src = dataUrl; p.hidden = false;
   $('#btnExtract').disabled = false;
 }
-async function onFile(file) {
-  if (!file) return;
-  try { setImage(await fileToJpeg(file), false); } catch (e) { toast(e.message); }
-}
+async function onFile(file) { if (!file) return; try { setImage(await fileToJpeg(file), false); } catch (e) { toast(e.message); } }
 $('#fileCam').addEventListener('change', e => onFile(e.target.files[0]));
 $('#fileGal').addEventListener('change', e => onFile(e.target.files[0]));
 $('#btnSample').addEventListener('click', async () => setImage(await drawSampleForm(), true));
@@ -892,29 +1101,68 @@ $('#btnExtract').addEventListener('click', async () => {
   const btn = $('#btnExtract'); btn.disabled = true;
   $('#extractProgress').hidden = false;
   $('#extractMsg').textContent = S.live ? 'Gemini is reading the form…' : 'Gemini is reading the form… (demo simulation)';
-  try {
-    const data = await Store().extract(S.scan.image, S.scan.isSample);
-    fillDraft(data);
-  } catch (e) { toast('Extraction failed: ' + e.message); }
+  try { fillDraft(await Store().extract(S.scan.image, S.scan.isSample)); }
+  catch (e) { toast('Extraction failed: ' + e.message); }
   finally { btn.disabled = false; $('#extractProgress').hidden = true; }
 });
 
+/** Find the plan entry for the draft's date/shift/machine/model (loose match on names). */
+async function findPlan(date, shift, machine, model) {
+  if (!date) return null;
+  let pool = S.plans.filter(p => p.date === date);
+  if (!pool.length) { try { pool = await Store().listPlans(date, date); } catch (e) { pool = []; } }
+  const km = key(machine), kmo = key(model);
+  const same = pool.filter(p => p.shift === shift && key(p.machine) === km);
+  return same.find(p => key(p.model) === kmo) || same.find(p => kmo && (key(p.model).includes(kmo) || kmo.includes(key(p.model)))) || null;
+}
+let draftPlan = null;
+async function updatePlanMatch(autofill) {
+  const d = { date: $('#dDate').value, shift: $('#dShift').value, machine: $('#dMachine').value, model: $('#dModel').value };
+  draftPlan = await findPlan(d.date, d.shift, d.machine, d.model);
+  const box = $('#planMatch');
+  if (draftPlan) {
+    box.innerHTML = `<span>i</span><div><b>Plan found:</b> ${esc(draftPlan.machine)} · ${esc(draftPlan.model)} · ${draftPlan.shift} shift · <b class="num">${fmt(draftPlan.qty)} pcs</b> at ${fmt(draftPlan.ratePerHour)} pcs/hr. <button class="btn small" id="btnFillPlan">Fill hourly plan</button></div>`;
+    if (draftPlan.model !== d.model) $('#dModel').value = draftPlan.model;
+    if (!$('#dOperator').value && draftPlan.operator) $('#dOperator').value = draftPlan.operator;
+    if (autofill && readHours().every(h => !h.plan)) fillHourlyPlan();
+  } else {
+    box.innerHTML = `<span>i</span><div>No plan in the monthly plan for this date, shift, machine and model. The record is saved as unplanned; type the hourly plan if there is one.</div>`;
+  }
+  const models = [...new Set(S.plans.filter(p => !d.machine || key(p.machine) === key(d.machine)).map(p => p.model))].sort();
+  $('#modelList').innerHTML = models.map(m => `<option value="${esc(m)}">`).join('');
+}
+function fillHourlyPlan() {
+  if (!draftPlan) return;
+  const plan = hourlyPlan(draftPlan);
+  const rows = $$('#hourEdit tbody tr');
+  plan.forEach(p => {
+    let tr = rows.find(r => slotHour($('.slot', r).value) === p.hour);
+    if (!tr) { $('#hourEdit tbody').insertAdjacentHTML('beforeend', hourRow({ slot: slotLabel(p.hour), plan: p.plan, actual: '', reject: '', remark: '' })); return; }
+    $('.plan', tr).value = p.plan;
+  });
+  rows.forEach(r => { const h = slotHour($('.slot', r).value); if (!plan.some(p => p.hour === h)) $('.plan', r).value = 0; });
+  updateTotals();
+}
+$('#planMatch').addEventListener('click', e => { if (e.target.id === 'btnFillPlan') fillHourlyPlan(); });
+['#dDate', '#dShift', '#dMachine', '#dModel'].forEach(id => $(id).addEventListener('change', () => updatePlanMatch(false)));
+
 function fillDraft(d) {
-  S.scan.draft = d;
   $('#reviewEmpty').hidden = true; $('#reviewBody').hidden = false;
-  $('#dDate').value = /^\d{4}-\d{2}-\d{2}$/.test(d.date) ? d.date : toISO(new Date());
+  $('#dDate').value = /^\d{4}-\d{2}-\d{2}$/.test(d.date) ? d.date : today();
   $('#dShift').value = d.shift === 'Night' ? 'Night' : 'Day';
-  $('#dLine').value = d.line || ''; $('#dPartNo').value = d.partNo || ''; $('#dPartName').value = d.partName || '';
-  $('#dSupervisor').value = d.supervisor || ''; $('#dDailyPlan').value = d.dailyPlan || ''; $('#dDowntime').value = d.downtimeMin || 0;
+  $('#dMachine').value = d.machine || ''; $('#dModel').value = d.model || '';
+  $('#dOperator').value = d.operator || ''; $('#dSupervisor').value = d.supervisor || ''; $('#dDowntime').value = d.downtimeMin || 0;
   $('#confLabel').textContent = typeof d.confidence === 'number' ? `Gemini confidence ${(d.confidence * 100).toFixed(0)}%` : '';
   const w = (d.warnings || []).filter(Boolean);
   $('#reviewNotices').innerHTML = w.length ? `<div class="notice warn"><span>▲</span><div><b>Check these before saving</b><ul>${w.map(x => `<li>${esc(x)}</li>`).join('')}</ul></div></div>` : '';
-  renderHourEdit(d.hourly && d.hourly.length ? d.hourly : SLOTS_DAY.map(slot => ({ slot, plan: 0, actual: 0, reject: 0, remark: '' })));
+  const start = shiftStart($('#dShift').value);
+  renderHourEdit(d.hourly && d.hourly.length ? d.hourly : Array.from({ length: 11 }, (_, i) => ({ slot: slotLabel(start + i), plan: 0, actual: 0, reject: 0, remark: '' })));
+  updatePlanMatch(true);
   if (window.innerWidth < 800) $('#reviewPanel').scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 function renderHourEdit(rows) {
   $('#hourEdit').innerHTML = `<thead><tr><th>Hour</th><th class="r">Plan</th><th class="r">Actual</th><th class="r">Reject</th><th>Remarks</th><th></th></tr></thead>
-    <tbody>${rows.map(h => hourRow(h)).join('')}</tbody><tfoot><tr><td>Total</td><td class="r num" id="tPlan"></td><td class="r num" id="tAct"></td><td class="r num" id="tRej"></td><td id="tPct"></td><td></td></tr></tfoot>`;
+    <tbody>${rows.map(hourRow).join('')}</tbody><tfoot><tr><td>Total</td><td class="r num" id="tPlan"></td><td class="r num" id="tAct"></td><td class="r num" id="tRej"></td><td id="tPct"></td><td></td></tr></tfoot>`;
   updateTotals();
 }
 function hourRow(h) {
@@ -937,37 +1185,35 @@ function updateTotals() {
 $('#hourEdit').addEventListener('input', updateTotals);
 $('#hourEdit').addEventListener('click', e => { if (e.target.closest('[data-rm]')) { e.target.closest('tr').remove(); updateTotals(); } });
 $('#btnAddHour').addEventListener('click', () => {
-  const rows = readHours(); const lastSlot = rows.length ? rows[rows.length - 1].slot : '07:00-08:00';
-  const m = lastSlot.match(/(\d{1,2}):(\d{2})\s*$/); let next = '';
-  if (m) { const hh = (+m[1] + 1) % 24; next = `${m[1].padStart(2, '0')}:${m[2]}-${String(hh).padStart(2, '0')}:${m[2]}`; }
-  $('#hourEdit tbody').insertAdjacentHTML('beforeend', hourRow({ slot: next, plan: rows.length ? rows[rows.length - 1].plan : 0, actual: '', reject: '', remark: '' }));
+  const rows = readHours(); const lastH = rows.length ? slotHour(rows[rows.length - 1].slot) : shiftStart($('#dShift').value) - 1;
+  $('#hourEdit tbody').insertAdjacentHTML('beforeend', hourRow({ slot: slotLabel((lastH ?? 7) + 1), plan: 0, actual: '', reject: '', remark: '' }));
   updateTotals();
 });
 $('#btnDiscard').addEventListener('click', resetScan);
 function resetScan() {
-  S.scan = { image: null, isSample: false, draft: null };
+  S.scan = { image: null, isSample: false };
   $('#preview').hidden = true; $('#preview').removeAttribute('src'); $('#btnExtract').disabled = true;
   $('#reviewBody').hidden = true; $('#reviewEmpty').hidden = false; $('#confLabel').textContent = '';
   $('#fileCam').value = ''; $('#fileGal').value = '';
 }
 $('#btnSave').addEventListener('click', async () => {
   const hourly = readHours();
-  if (!$('#dLine').value.trim()) { toast('Fill in the line before saving.'); $('#dLine').focus(); return; }
+  if (!$('#dMachine').value.trim() || !$('#dModel').value.trim()) { toast('Fill in the machine and model before saving.'); return; }
   if (!hourly.length) { toast('Add at least one hour row.'); return; }
   const rec = {
-    date: $('#dDate').value, shift: $('#dShift').value, line: $('#dLine').value.trim(), partNo: $('#dPartNo').value,
-    partName: $('#dPartName').value, supervisor: $('#dSupervisor').value, dailyPlan: +$('#dDailyPlan').value || 0,
-    downtimeMin: +$('#dDowntime').value || 0, hourly, source: S.scan.image ? 'scan' : 'manual',
+    date: $('#dDate').value, shift: $('#dShift').value, machine: draftPlan ? draftPlan.machine : $('#dMachine').value.trim(),
+    model: draftPlan ? draftPlan.model : $('#dModel').value.trim(), operator: $('#dOperator').value, supervisor: $('#dSupervisor').value,
+    downtimeMin: +$('#dDowntime').value || 0, planQty: draftPlan ? draftPlan.qty : 0, hourly, source: S.scan.image ? 'scan' : 'manual',
   };
   const btn = $('#btnSave'); btn.disabled = true;
   try {
-    const saved = await Store().add(rec);
-    toast(`Saved ${saved.line} · ${shortDate(saved.date)} · ${fmt(saved.totalActual)} pcs`);
+    const { record: r, replaced } = await Store().add(rec);
+    toast(`${replaced ? 'Updated' : 'Saved'} ${r.machine} · ${r.model} · ${r.shift} · ${fmt(r.totalActual)} pcs`);
     resetScan();
-    if (saved.date < $('#fFrom').value || saved.date > $('#fTo').value) setRange(14);
+    if (r.date < $('#fFrom').value || r.date > $('#fTo').value) applyRange('m:' + r.date.slice(0, 7));
+    $('#fMachine').value = 'all'; $('#fModel').value = 'all';
     await refresh();
-    $('#hDate').value = saved.date; $('#hLine').value = S.lines.includes(saved.line) ? saved.line : 'all';
-    renderHourly();
+    $('#fMachine').value = r.machine; fillModelOptions(); $('#fModel').value = r.model; $('#hDate').value = r.date;
     showView('dashboard');
   } catch (e) { toast('Save failed: ' + e.message); }
   finally { btn.disabled = false; }
@@ -975,13 +1221,16 @@ $('#btnSave').addEventListener('click', async () => {
 
 /* ---------------- Settings ---------------- */
 $('#sApi').value = Settings.apiBase; $('#sToken').value = Settings.token; $('#sDemo').checked = !!Settings.forceDemo;
+$('#sDayStart').value = Settings.dayStart; $('#sNightStart').value = Settings.nightStart;
 $('#btnSaveSettings').addEventListener('click', async () => {
   Settings.apiBase = $('#sApi').value.trim(); Settings.token = $('#sToken').value.trim(); Settings.forceDemo = $('#sDemo').checked;
+  const hr = v => Math.min(23, Math.max(0, Math.round(Number(v) || 0)));
+  Settings.dayStart = hr($('#sDayStart').value); Settings.nightStart = hr($('#sNightStart').value);
   store(SETTINGS_KEY, Settings);
-  await detectMode(); await refresh();
+  await detectMode(); await refresh(); renderPresets();
   toast(S.live ? 'Connected to Worker' : 'Running in demo mode');
 });
-$('#btnResetDemo').addEventListener('click', async () => { DemoStore.reset(); if (!S.live) await refresh(); toast('Demo data reset'); });
+$('#btnResetDemo').addEventListener('click', async () => { DemoStore.reset(); if (!S.live) { await refresh(); renderPresets(); } toast('Demo data reset'); });
 
 /* ---------------- Navigation & boot ---------------- */
 function showView(v) {
@@ -989,28 +1238,34 @@ function showView(v) {
   $$('section.view').forEach(s => (s.hidden = s.id !== 'view-' + v));
   if (v === 'dashboard') renderDashboard();
   if (v === 'records') renderRecords();
+  if (v === 'plan') renderPlanMeta();
   store(SETTINGS_KEY + '.view', v);
 }
 $$('.tabs button').forEach(b => b.addEventListener('click', () => showView(b.dataset.view)));
-$$('#presets .btn').forEach(b => b.addEventListener('click', async () => { setRange(b.dataset.days === 'mtd' ? 'mtd' : +b.dataset.days); await refresh(); }));
-['#fFrom', '#fTo'].forEach(id => $(id).addEventListener('change', async () => { $$('#presets .btn').forEach(b => b.classList.remove('on')); await refresh(); }));
-['#fLine', '#fShift'].forEach(id => $(id).addEventListener('change', () => { $('#hLine').value = $('#fLine').value; renderDashboard(); }));
-['#hDate', '#hLine'].forEach(id => $(id).addEventListener('change', renderHourly));
+$('#presets').addEventListener('click', async e => { const b = e.target.closest('[data-range]'); if (!b) return; applyRange(b.dataset.range); await refresh(); });
+['#fFrom', '#fTo'].forEach(id => $(id).addEventListener('change', async () => { markPreset(null); store(SETTINGS_KEY + '.range', null); await refresh(); }));
+$('#fMachine').addEventListener('change', () => { fillModelOptions(); renderDashboard(); });
+['#fModel', '#fShift'].forEach(id => $(id).addEventListener('change', renderDashboard));
+$('#hDate').addEventListener('change', renderHourly);
 
 async function refresh() {
-  await loadRecords();
+  await loadData();
   if (!$('#view-dashboard').hidden) renderDashboard();
   if (!$('#view-records').hidden) renderRecords();
+  if (!$('#view-plan').hidden) renderPlanMeta();
 }
 let rz; window.addEventListener('resize', () => { clearTimeout(rz); rz = setTimeout(() => { if (!$('#view-dashboard').hidden) renderDashboard(); }, 150); });
 
 (async function boot() {
-  const r = store(SETTINGS_KEY + '.range');
-  setRange(r === 'mtd' ? 'mtd' : [7, 14, 30].includes(r) ? r : 14);
   await detectMode();
-  await loadRecords();
+  try { S.metas = await Store().listPlanMeta(); } catch (e) { S.metas = []; }
+  let r = store(SETTINGS_KEY + '.range');
+  if (!r && S.metas.length) r = 'm:' + S.metas.map(m => m.month).sort().pop();
+  applyRange(r);
+  renderPresets();
+  await loadData();
   const v = store(SETTINGS_KEY + '.view');
-  showView(['dashboard', 'scan', 'records', 'settings'].includes(v) ? v : 'dashboard');
+  showView(['dashboard', 'plan', 'scan', 'records', 'settings'].includes(v) ? v : 'dashboard');
 })();
 </script>
 </body>
