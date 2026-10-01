@@ -243,8 +243,9 @@ Machines are names like P9, P10, P11, P12, T13, HP 2, WJ1, WJ2, HEAT ROLLER, VAC
 
 Table, one row per hour:
 - First column: start hour at the top-left of the diagonal, end hour at the bottom-right ("8" / "9"). "2.3" means 2:30.
-- Plan column: printed or written upper number = plan this hour, lower number = cumulative plan.
-- Actual column: handwritten upper number = actual this hour, lower number = cumulative actual.
+- Plan column: upper number = plan output for this hour; lower number = cumulative plan counted from 8 o'clock (start of the shift).
+- Actual column: handwritten upper number = actual output for this hour; lower number = cumulative actual counted from 8 o'clock.
+  The lower number of a row is always the lower number of the row above plus this row's upper number.
 - Ignore the Diff column.
 - Downtime details on the right: which box is ticked/circled and any text after "TIME:".
 Only return rows that have a number in Plan or Actual. Use 0 for an empty number.
