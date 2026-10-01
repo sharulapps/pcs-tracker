@@ -97,7 +97,10 @@ input[type="date"], input[type="text"], input[type="number"], input[type="url"],
   background: var(--surface); border: 1px solid var(--line); border-radius: 6px; padding: 7px 9px; min-height: 36px; min-width: 0;
 }
 input:focus, select:focus { border-color: var(--accent); outline: none; box-shadow: 0 0 0 3px var(--accent-wash); }
-.presets { display: flex; gap: 4px; flex-wrap: wrap; }
+.kpi-group { display: flex; flex-direction: column; gap: 8px; }
+.kpi-group > .eyebrow { padding-left: 2px; }
+tr.sel td { background: var(--accent-wash); }
+tr.future td { color: var(--muted); }
 .btn { border: 1px solid var(--line); background: var(--surface); border-radius: 6px; padding: 7px 12px; min-height: 36px; cursor: pointer; font-weight: 500; display: inline-flex; align-items: center; gap: 6px; justify-content: center; }
 .btn:hover { background: var(--surface-2); }
 .btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
@@ -248,23 +251,26 @@ td.muted, .muted { color: var(--muted); }
   <section class="view" id="view-dashboard">
     <div class="panel">
       <div class="filters">
-        <div class="field"><label for="fFrom">From</label><input type="date" id="fFrom"></div>
-        <div class="field"><label for="fTo">To</label><input type="date" id="fTo"></div>
+        <div class="field"><label for="fMonth">Month</label><select id="fMonth"></select></div>
+        <div class="field"><label for="fDate">Date (daily PCS)</label><input type="date" id="fDate"></div>
         <div class="field"><label for="fMachine">Machine</label><select id="fMachine"></select></div>
         <div class="field"><label for="fModel">Model</label><select id="fModel"></select></div>
         <div class="field"><label for="fShift">Shift</label><select id="fShift"><option value="all">Day + Night</option><option value="Day">Day (D)</option><option value="Night">Night (N)</option></select></div>
-        <div class="field">
-          <label>Range</label>
-          <div class="presets" id="presets"></div>
-        </div>
       </div>
     </div>
 
-    <div class="kpis" id="kpis"></div>
+    <div class="kpi-group">
+      <div class="eyebrow" id="kpiDayLabel">Daily output</div>
+      <div class="kpis" id="kpisDay"></div>
+    </div>
+    <div class="kpi-group">
+      <div class="eyebrow" id="kpiMonthLabel">Month to date</div>
+      <div class="kpis" id="kpis"></div>
+    </div>
 
     <div class="panel">
       <div class="panel-head">
-        <h2>Production output · cumulative plan vs actual</h2>
+        <h2 id="cumTitle">Monthly output · accumulated from the 1st</h2>
         <div class="legend" id="cumLegend"></div>
       </div>
       <div class="chart" id="chartCum"></div>
@@ -272,7 +278,7 @@ td.muted, .muted { color: var(--muted); }
 
     <div class="panel">
       <div class="panel-head">
-        <h2>Daily plan vs actual</h2>
+        <h2 id="dailyTitle">Daily plan vs actual</h2>
         <div class="legend"><span><i class="sw plan"></i>Plan</span><span><i class="sw actual"></i>Actual</span></div>
       </div>
       <div class="chart" id="chartDaily"></div>
@@ -283,10 +289,7 @@ td.muted, .muted { color: var(--muted); }
 
     <div class="panel">
       <div class="panel-head">
-        <h2>Hourly plan vs actual</h2>
-        <div class="filters">
-          <div class="field"><label for="hDate">Date</label><input type="date" id="hDate"></div>
-        </div>
+        <h2 id="hourTitle">Hourly plan vs actual</h2>
       </div>
       <div class="plan-hint" id="hourHint" style="margin-bottom:8px"></div>
       <div class="legend" style="margin-bottom:6px"><span><i class="sw plan"></i>Plan (output / hour)</span><span><i class="sw actual"></i>Actual (PCS)</span></div>
@@ -700,23 +703,25 @@ async function detectMode() {
 }
 
 /* ---------------- Filters ---------------- */
-function renderPresets() {
-  const months = S.metas.map(m => m.month).sort().reverse().slice(0, 3);
-  $('#presets').innerHTML = months.map(m => `<button class="btn small" data-range="m:${m}">${monthLabel(m)}</button>`).join('')
-    + '<button class="btn small" data-range="7">Last 7 days</button><button class="btn small" data-range="mtd">Month to date</button>';
-  markPreset(store(SETTINGS_KEY + '.range'));
+const curMonth = () => $('#fMonth').value;
+const monthStart = () => curMonth() + '-01';
+const asOf = () => $('#fDate').value;
+function defaultDate(ym) { const t = today(); return t.startsWith(ym) ? t : (ym < t.slice(0, 7) ? monthEnd(ym) : ym + '-01'); }
+function renderMonthOptions(selected) {
+  const months = [...new Set([...S.metas.map(m => m.month), today().slice(0, 7), selected].filter(Boolean))].sort().reverse();
+  $('#fMonth').innerHTML = months.map(m => `<option value="${m}">${monthLabel(m)}${S.metas.some(x => x.month === m) ? '' : ' · no plan'}</option>`).join('');
+  $('#fMonth').value = selected;
 }
-function markPreset(r) { $$('#presets .btn').forEach(b => b.classList.toggle('on', b.dataset.range === r)); }
-function applyRange(r) {
-  const t = today();
-  if (r && r.startsWith('m:')) { const m = r.slice(2); $('#fFrom').value = m + '-01'; $('#fTo').value = monthEnd(m); }
-  else if (r === 'mtd') { $('#fFrom').value = t.slice(0, 8) + '01'; $('#fTo').value = t; }
-  else { $('#fFrom').value = addDays(t, -6); $('#fTo').value = t; r = '7'; }
-  store(SETTINGS_KEY + '.range', r); markPreset(r);
+/** Switch the dashboard to a month; the date picker stays inside it. */
+function setMonth(ym, date) {
+  renderMonthOptions(ym);
+  const d = $('#fDate');
+  d.min = ym + '-01'; d.max = monthEnd(ym);
+  d.value = date && date.startsWith(ym) ? date : defaultDate(ym);
+  store(SETTINGS_KEY + '.month', ym);
 }
-
 async function loadData() {
-  const from = $('#fFrom').value, to = $('#fTo').value;
+  const from = monthStart(), to = monthEnd(curMonth());
   try {
     [S.records, S.plans, S.metas] = await Promise.all([Store().list(from, to), Store().listPlans(from, to), Store().listPlanMeta()]);
   } catch (e) { toast('Could not load data: ' + e.message); S.records = []; S.plans = []; }
@@ -749,9 +754,9 @@ function byDate(plans, recs, from, to) {
   recs.forEach(r => { const x = m.get(r.date); if (x) { x.actual += r.totalActual; x.reject += r.totalReject; x.n++; } });
   return [...m.values()];
 }
-function pendingPcs(plans, recs) {
-  const have = new Set(recs.map(r => r.id)), t = today();
-  return plans.filter(p => p.date <= t && !have.has(p.id));
+function pendingPcs(plans, recs, upto) {
+  const have = new Set(recs.map(r => r.id));
+  return plans.filter(p => p.date <= upto && !have.has(p.id));
 }
 
 /* ---------------- Charts (hand-drawn SVG) ---------------- */
@@ -790,7 +795,7 @@ function yAxis(svg, m, W, H, max) {
   }
 }
 
-function groupedBars(host, rows, { label, tipTitle, tipExtra, isFuture = () => false }) {
+function groupedBars(host, rows, { label, tipTitle, tipExtra, isFuture = () => false, selected = () => false, onPick = null }) {
   if (!rows.length || rows.every(r => !r.plan && !r.actual)) { host.innerHTML = '<div class="empty">No plan or PCS records for this selection.</div>'; return; }
   const { W, H, svg, tip } = frame(host, 260);
   const m = { l: 44, r: 6, t: 22, b: 26 };
@@ -800,6 +805,7 @@ function groupedBars(host, rows, { label, tipTitle, tipExtra, isFuture = () => f
   const gw = iw / rows.length;
   const bw = Math.max(2, Math.min(18, (gw * 0.72 - 2) / 2));
   const every = Math.max(1, Math.ceil(46 / gw));
+  rows.forEach((r, i) => { if (selected(r)) el('rect', { class: 'hl', x: m.l + gw * i, y: m.t, height: ih, width: gw, rx: 4 }, svg); });
   const hl = el('rect', { class: 'hl', y: m.t, height: ih, width: gw, rx: 4, visibility: 'hidden' }, svg);
   rows.forEach((r, i) => {
     const cx = m.l + gw * i + gw / 2;
@@ -815,13 +821,13 @@ function groupedBars(host, rows, { label, tipTitle, tipExtra, isFuture = () => f
       const b = host.getBoundingClientRect(); placeTip(host, tip, ev.clientX - b.left, ev.clientY - b.top);
     };
     hit.addEventListener('pointermove', show); hit.addEventListener('pointerdown', show);
+    if (onPick) { hit.style.cursor = 'pointer'; hit.addEventListener('click', () => onPick(r)); }
   });
   svg.addEventListener('pointerleave', () => { tip.hidden = true; hl.setAttribute('visibility', 'hidden'); });
 }
 
-function cumulativeLines(host, rows) {
-  if (!rows.length || rows.every(r => !r.plan && !r.actual)) { host.innerHTML = '<div class="empty">No plan or PCS records for this selection.</div>'; $('#cumLegend').innerHTML = ''; return; }
-  const t = today();
+function cumulativeLines(host, rows, t) {
+  if (!rows.length || rows.every(r => !r.plan && !r.actual)) { host.innerHTML = '<div class="empty">No plan or PCS records for this month.</div>'; $('#cumLegend').innerHTML = ''; return; }
   let cp = 0, ca = 0;
   const pts = rows.map(r => ({ ...r, cp: (cp += r.plan), ca: r.date <= t ? (ca += r.actual) : null }));
   const lastA = pts.reduce((k, p, i) => (p.ca !== null ? i : k), -1);
@@ -854,63 +860,79 @@ function cumulativeLines(host, rows) {
     xh.setAttribute('x1', X(i)); xh.setAttribute('x2', X(i)); xh.setAttribute('visibility', 'visible');
     dp.setAttribute('cx', X(i)); dp.setAttribute('cy', Y(p.cp)); dp.setAttribute('visibility', 'visible');
     if (p.ca !== null) { da.setAttribute('cx', X(i)); da.setAttribute('cy', Y(p.ca)); da.setAttribute('visibility', 'visible'); } else da.setAttribute('visibility', 'hidden');
-    tip.innerHTML = tipRows('Up to ' + dowDate(p.date), p.cp, p.ca ?? 0, '', p.ca === null); tip.hidden = false;
+    tip.innerHTML = tipRows(`1st – ${shortDate(p.date)} (accumulated)`, p.cp, p.ca ?? 0, '', p.ca === null); tip.hidden = false;
     placeTip(host, tip, X(i) / sx, ev.clientY - b.top);
   };
   hit.addEventListener('pointermove', move); hit.addEventListener('pointerdown', move);
   hit.addEventListener('pointerleave', () => { tip.hidden = true; [xh, dp, da].forEach(e => e.setAttribute('visibility', 'hidden')); });
-  $('#cumLegend').innerHTML = `<span><i class="sw line-plan"></i>Plan <b class="num">${fmt(cp)}</b>${planToDate < cp ? ` <span class="muted">(${fmt(planToDate)} to date)</span>` : ''}</span><span><i class="sw line-actual"></i>Actual <b class="num">${fmt(ca)}</b></span>`;
+  $('#cumLegend').innerHTML = `<span><i class="sw line-plan"></i>Month plan <b class="num">${fmt(cp)}</b>${planToDate < cp ? ` <span class="muted">(${fmt(planToDate)} to date)</span>` : ''}</span><span><i class="sw line-actual"></i>Actual <b class="num">${fmt(ca)}</b></span>`;
 }
 
 /* ---------------- Dashboard ---------------- */
 function renderDashboard() {
-  const from = $('#fFrom').value, to = $('#fTo').value, t = today();
+  const ym = curMonth(), from = monthStart(), to = monthEnd(ym), t = asOf();
   const plans = S.plans.filter(match), recs = S.records.filter(match);
   const days = byDate(plans, recs, from, to);
-  const past = days.filter(d => d.date <= t);
-  const planAll = plans.reduce((s, p) => s + p.qty, 0);
-  const planToDate = past.reduce((s, d) => s + d.plan, 0);
-  const actual = recs.reduce((s, r) => s + r.totalActual, 0);
-  const reject = recs.reduce((s, r) => s + r.totalReject, 0);
-  const downtime = recs.reduce((s, r) => s + r.downtimeMin, 0);
-  const p = pct(actual, planToDate), st = statusOf(p);
-  const planned = past.filter(d => d.plan > 0);
+  const mtd = days.filter(d => d.date <= t);
+  const recsMtd = recs.filter(r => r.date <= t);
+  const monthPlan = plans.reduce((s, p) => s + p.qty, 0);
+  const planMtd = mtd.reduce((s, d) => s + d.plan, 0);
+  const actualMtd = mtd.reduce((s, d) => s + d.actual, 0);
+  const reject = recsMtd.reduce((s, r) => s + r.totalReject, 0);
+  const downtime = recsMtd.reduce((s, r) => s + r.downtimeMin, 0);
+  const p = pct(actualMtd, planMtd), st = statusOf(p);
+  const planned = mtd.filter(d => d.plan > 0);
   const daysMet = planned.filter(d => d.actual >= d.plan).length;
-  const pend = pendingPcs(plans, recs);
+  const pend = pendingPcs(plans, recs, t);
+  const day = days.find(d => d.date === t) || { plan: 0, actual: 0, reject: 0, n: 0 };
+  const dayPend = pend.filter(x => x.date === t);
+  const balance = monthPlan - actualMtd;
+  const daysLeft = days.filter(d => d.date > t && d.plan > 0).length;
 
+  $('#kpiDayLabel').textContent = `Daily output · ${dowDate(t)}`;
+  const dp = pct(day.actual, day.plan), dst = statusOf(dp);
+  $('#kpisDay').innerHTML = `
+    <div class="kpi"><span class="eyebrow">Plan</span><span class="v num">${fmt(day.plan)}<small>pcs</small></span><span class="s">${plans.filter(x => x.date === t).length} planned runs</span></div>
+    <div class="kpi"><span class="eyebrow">Actual (PCS)</span><span class="v num">${fmt(day.actual)}<small>pcs</small></span><span class="s">Variance ${deltaSpan(day.actual - day.plan)} pcs</span></div>
+    <div class="kpi"><span class="eyebrow">Achievement</span><span class="v num">${day.plan ? dp.toFixed(1) : '–'}<small>%</small></span><span class="s">${day.plan ? `<span class="status ${dst.cls}"><i>${dst.icon}</i>${dst.label}</span>` : 'No plan this day'}</span></div>
+    <div class="kpi"><span class="eyebrow">PCS scanned</span><span class="v num">${day.n}<small>/ ${day.n + dayPend.length}</small></span><span class="s">${dayPend.length ? `<span class="status warn"><i>▲</i>${dayPend.length} not submitted</span>` : (day.n ? '<span class="status good"><i>✓</i>All in</span>' : '—')}</span></div>`;
+
+  $('#kpiMonthLabel').textContent = `Month to date · ${shortDate(from)} – ${shortDate(t)} (accumulated from the 1st)`;
   $('#kpis').innerHTML = `
-    <div class="kpi"><span class="eyebrow">Plan to date</span><span class="v num">${fmt(planToDate)}<small>pcs</small></span><span class="s">${planAll > planToDate ? `Full range ${fmt(planAll)} pcs` : `${planned.length} planned days`}</span></div>
-    <div class="kpi"><span class="eyebrow">Actual output</span><span class="v num">${fmt(actual)}<small>pcs</small></span><span class="s">Variance ${deltaSpan(actual - planToDate)} pcs</span></div>
-    <div class="kpi"><span class="eyebrow">Achievement</span><span class="v num">${planToDate ? p.toFixed(1) : '–'}<small>%</small></span><span class="s">${planToDate ? `<span class="status ${st.cls}"><i>${st.icon}</i>${st.label}</span>` : 'No plan to date'}</span></div>
-    <div class="kpi"><span class="eyebrow">Days on target</span><span class="v num">${daysMet}<small>/ ${planned.length}</small></span><span class="s">Days where actual ≥ plan</span></div>
-    <div class="kpi"><span class="eyebrow">PCS not submitted</span><span class="v num">${pend.length}</span><span class="s">${pend.length ? `<span class="status warn"><i>▲</i>${fmt(pend.reduce((s, x) => s + x.qty, 0))} pcs planned</span>` : '<span class="status good"><i>✓</i>All planned shifts in</span>'}</span></div>
-    <div class="kpi"><span class="eyebrow">Reject rate</span><span class="v num">${actual ? ((reject / actual) * 100).toFixed(2) : '0.00'}<small>%</small></span><span class="s">${fmt(reject)} pcs · downtime ${fmt(downtime)} min</span></div>`;
+    <div class="kpi"><span class="eyebrow">Plan to date</span><span class="v num">${fmt(planMtd)}<small>pcs</small></span><span class="s">Month plan ${fmt(monthPlan)} pcs</span></div>
+    <div class="kpi"><span class="eyebrow">Actual to date</span><span class="v num">${fmt(actualMtd)}<small>pcs</small></span><span class="s">Variance ${deltaSpan(actualMtd - planMtd)} pcs</span></div>
+    <div class="kpi"><span class="eyebrow">Achievement</span><span class="v num">${planMtd ? p.toFixed(1) : '–'}<small>%</small></span><span class="s">${planMtd ? `<span class="status ${st.cls}"><i>${st.icon}</i>${st.label}</span>` : 'No plan to date'}</span></div>
+    <div class="kpi"><span class="eyebrow">Balance to month plan</span><span class="v num">${fmt(Math.max(0, balance))}<small>pcs</small></span><span class="s">${balance <= 0 ? '<span class="status good"><i>✓</i>Month plan reached</span>' : daysLeft ? `${daysLeft} planned days left · ${fmt(balance / daysLeft)} pcs/day` : 'No planned days left'}</span></div>
+    <div class="kpi"><span class="eyebrow">Days on target</span><span class="v num">${daysMet}<small>/ ${planned.length}</small></span><span class="s">PCS not submitted: ${pend.length ? `<b class="delta-neg">${pend.length}</b>` : '0'}</span></div>
+    <div class="kpi"><span class="eyebrow">Reject rate</span><span class="v num">${actualMtd ? ((reject / actualMtd) * 100).toFixed(2) : '0.00'}<small>%</small></span><span class="s">${fmt(reject)} pcs · downtime ${fmt(downtime)} min</span></div>`;
 
-  cumulativeLines($('#chartCum'), days);
+  $('#cumTitle').textContent = `Monthly output · ${monthLabel(ym)} · accumulated from the 1st`;
+  cumulativeLines($('#chartCum'), days, t);
 
+  $('#dailyTitle').textContent = `Daily plan vs actual · ${monthLabel(ym)}`;
   groupedBars($('#chartDaily'), days, {
-    label: d => shortDate(d.date),
+    label: d => String(+d.date.slice(8)),
     tipTitle: d => dowDate(d.date),
     isFuture: d => d.date > t,
+    selected: d => d.date === t,
+    onPick: d => { $('#fDate').value = d.date; renderDashboard(); },
     tipExtra: d => (d.n ? `<div class="row"><span>Reject</span><span class="num">${fmt(d.reject)}</span></div>` : '') + (d.plan === 0 && d.date <= t ? '<div class="row"><span class="muted">No plan this day</span><span></span></div>' : ''),
   });
 
-  const drows = days.filter(d => d.plan || d.actual).reverse();
-  $('#tblDaily').innerHTML = `<thead><tr><th>Date</th><th class="r">Plan</th><th class="r">Actual</th><th class="r">Variance</th><th class="r">Reject</th><th class="r">Achievement</th></tr></thead>
-    <tbody>${drows.map(d => `<tr><td>${dowDate(d.date)}</td><td class="r num">${fmt(d.plan)}</td>${d.date > t ? '<td class="r muted" colspan="4">Upcoming</td>' : `<td class="r num">${fmt(d.actual)}</td><td class="r num">${deltaSpan(d.actual - d.plan)}</td><td class="r num">${fmt(d.reject)}</td><td class="r">${d.plan ? statusPill(pct(d.actual, d.plan)) : '<span class="muted">Unplanned</span>'}</td>`}</tr>`).join('') || '<tr><td colspan="6" class="empty">No plan or records.</td></tr>'}</tbody>
-    ${drows.length ? `<tfoot><tr><td>Total to date</td><td class="r num">${fmt(planToDate)}</td><td class="r num">${fmt(actual)}</td><td class="r num">${deltaSpan(actual - planToDate)}</td><td class="r num">${fmt(reject)}</td><td class="r">${planToDate ? statusPill(p) : ''}</td></tr></tfoot>` : ''}`;
+  let cp = 0, ca = 0;
+  const drows = days.map(d => ({ ...d, cp: (cp += d.plan), ca: d.date <= t ? (ca += d.actual) : null })).filter(d => d.plan || d.actual);
+  $('#tblDaily').innerHTML = `<thead><tr><th>Date</th><th class="r">Plan</th><th class="r">Actual</th><th class="r">Variance</th><th class="r">Daily %</th><th class="r">Acc. plan</th><th class="r">Acc. actual</th><th class="r">Acc. %</th></tr></thead>
+    <tbody>${drows.map(d => `<tr class="${d.date === t ? 'sel' : d.date > t ? 'future' : ''}" data-date="${d.date}" style="cursor:pointer"><td>${dowDate(d.date)}</td><td class="r num">${fmt(d.plan)}</td>${d.date > t ? `<td class="r" colspan="3">Upcoming</td><td class="r num">${fmt(d.cp)}</td><td colspan="2"></td>` : `<td class="r num">${fmt(d.actual)}</td><td class="r num">${deltaSpan(d.actual - d.plan)}</td><td class="r">${d.plan ? statusPill(pct(d.actual, d.plan)) : '<span class="muted">Unplanned</span>'}</td><td class="r num">${fmt(d.cp)}</td><td class="r num">${fmt(d.ca)}</td><td class="r">${d.cp ? statusPill(pct(d.ca, d.cp)) : ''}</td>`}</tr>`).join('') || '<tr><td colspan="8" class="empty">No plan or records this month.</td></tr>'}</tbody>
+    ${drows.length ? `<tfoot><tr><td>Month to date</td><td class="r num">${fmt(planMtd)}</td><td class="r num">${fmt(actualMtd)}</td><td class="r num">${deltaSpan(actualMtd - planMtd)}</td><td></td><td class="r num">${fmt(planMtd)}</td><td class="r num">${fmt(actualMtd)}</td><td class="r">${planMtd ? statusPill(p) : ''}</td></tr></tfoot>` : ''}`;
 
-  const hd = $('#hDate');
-  if (!hd.value || hd.value < from || hd.value > to) {
-    const lastPast = [...past].reverse().find(d => d.actual > 0 || d.plan > 0);
-    hd.value = lastPast ? lastPast.date : from;
-  }
   renderHourly();
-  renderMachineTable(plans, recs);
+  renderMachineTable(plans, recs, t);
 }
+$('#tblDaily').addEventListener('click', e => { const tr = e.target.closest('tr[data-date]'); if (!tr) return; $('#fDate').value = tr.dataset.date; renderDashboard(); });
 
 function renderHourly() {
-  const date = $('#hDate').value;
+  const date = asOf();
+  $('#hourTitle').textContent = `Hourly plan vs actual · ${dowDate(date)}`;
   const plans = S.plans.filter(p => p.date === date && match(p));
   const recs = S.records.filter(r => r.date === date && match(r));
   const shiftF = $('#fShift').value, shifts = shiftF === 'all' ? ['Day', 'Night'] : [shiftF];
@@ -930,7 +952,7 @@ function renderHourly() {
   const rows = [...slots.values()].sort((a, b) => order(a) - order(b));
   // trim empty slots at the end of each shift
   const keep = rows.filter(r => r.plan || r.actual || rows.some(o => o.shift === r.shift && order(o) > order(r) && (o.plan || o.actual)));
-  const future = date > today();
+  const future = false;
   const machine = $('#fMachine').value, model = $('#fModel').value;
   $('#hourHint').innerHTML = `<b>${date ? dowDate(date) : ''}</b> · ${machine === 'all' ? 'all machines' : esc(machine)} · ${model === 'all' ? 'all models' : esc(model)} · ${plans.length} planned run${plans.length === 1 ? '' : 's'}, ${recs.length} PCS record${recs.length === 1 ? '' : 's'}` + (plans.length === 1 ? ` · ${fmt(plans[0].ratePerHour)} pcs/hr` : '');
   groupedBars($('#chartHourly'), keep, {
@@ -949,8 +971,8 @@ function renderHourly() {
     }).join('') || `<tr><td colspan="8" class="empty">No plan or PCS for ${date ? dowDate(date) : 'this date'}.</td></tr>`}</tbody>`;
 }
 
-function renderMachineTable(plans, recs) {
-  const t = today(), pend = new Set(pendingPcs(plans, recs).map(p => p.id));
+function renderMachineTable(plans, recs, t) {
+  const pend = new Set(pendingPcs(plans, recs, t).map(p => p.id));
   const m = new Map();
   const get = (machine, model) => {
     if (!m.has(machine)) m.set(machine, { machine, models: new Map() });
@@ -959,16 +981,16 @@ function renderMachineTable(plans, recs) {
     return g.models.get(model);
   };
   plans.forEach(p => { const x = get(p.machine, p.model); x.rate = p.ratePerHour; x.planAll += p.qty; if (p.date <= t) x.plan += p.qty; if (pend.has(p.id)) x.pend++; });
-  recs.forEach(r => { const x = get(r.machine, r.model); x.actual += r.totalActual; x.reject += r.totalReject; });
+  recs.filter(r => r.date <= t).forEach(r => { const x = get(r.machine, r.model); x.actual += r.totalActual; x.reject += r.totalReject; });
   const groups = [...m.values()].sort((a, b) => a.machine.localeCompare(b.machine, 'en', { numeric: true }));
-  $('#machineHint').textContent = `${groups.length} machines · plan counted up to today`;
-  const row = (x, cls = '') => `<tr class="${cls}"><td>${cls ? esc(x.machine) : ''}</td><td>${cls ? `<span class="muted">${x.n} models</span>` : esc(x.model)}</td><td class="r num">${cls ? '' : fmt(x.rate)}</td><td class="r num">${fmt(x.planAll)}</td><td class="r num">${fmt(x.plan)}</td><td class="r num">${fmt(x.actual)}</td><td class="r num">${deltaSpan(x.actual - x.plan)}</td><td class="r num">${x.pend ? `<span class="status warn"><i>▲</i>${x.pend}</span>` : '—'}</td><td class="r">${x.plan ? `<div class="bar-cell"><span class="mini"><i style="width:${Math.min(100, pct(x.actual, x.plan))}%"></i></span>${statusPill(pct(x.actual, x.plan))}</div>` : '<span class="muted">No plan to date</span>'}</td></tr>`;
-  $('#tblMachines').innerHTML = `<thead><tr><th>Machine</th><th>Model</th><th class="r">Pcs/hr</th><th class="r">Month plan</th><th class="r">Plan to date</th><th class="r">Actual</th><th class="r">Variance</th><th class="r">PCS missing</th><th class="r">Achievement</th></tr></thead>
+  $('#machineHint').textContent = `${groups.length} machines · accumulated 1st – ${shortDate(t)}`;
+  const row = (x, cls = '') => `<tr class="${cls}"><td>${cls ? esc(x.machine) : ''}</td><td>${cls ? `<span class="muted">${x.n} models</span>` : esc(x.model)}</td><td class="r num">${cls ? '' : fmt(x.rate)}</td><td class="r num">${fmt(x.planAll)}</td><td class="r num">${fmt(x.plan)}</td><td class="r num">${fmt(x.actual)}</td><td class="r num">${deltaSpan(x.actual - x.plan)}</td><td class="r num">${fmt(Math.max(0, x.planAll - x.actual))}</td><td class="r num">${x.pend ? `<span class="status warn"><i>▲</i>${x.pend}</span>` : '—'}</td><td class="r">${x.plan ? `<div class="bar-cell"><span class="mini"><i style="width:${Math.min(100, pct(x.actual, x.plan))}%"></i></span>${statusPill(pct(x.actual, x.plan))}</div>` : '<span class="muted">No plan to date</span>'}</td></tr>`;
+  $('#tblMachines').innerHTML = `<thead><tr><th>Machine</th><th>Model</th><th class="r">Pcs/hr</th><th class="r">Month plan</th><th class="r">Plan to date</th><th class="r">Actual to date</th><th class="r">Variance</th><th class="r">Balance</th><th class="r">PCS missing</th><th class="r">Achievement</th></tr></thead>
     <tbody>${groups.map(g => {
       const ms = [...g.models.values()].sort((a, b) => a.model.localeCompare(b.model));
       const sum = ms.reduce((s, x) => ({ machine: g.machine, n: ms.length, planAll: s.planAll + x.planAll, plan: s.plan + x.plan, actual: s.actual + x.actual, pend: s.pend + x.pend }), { planAll: 0, plan: 0, actual: 0, pend: 0 });
       return row(sum, 'group') + ms.map(x => row(x)).join('');
-    }).join('') || '<tr><td colspan="9" class="empty">No plan or records in this range.</td></tr>'}</tbody>`;
+    }).join('') || '<tr><td colspan="10" class="empty">No plan or records this month.</td></tr>'}</tbody>`;
 }
 
 /* ---------------- Monthly plan import ---------------- */
@@ -1032,8 +1054,8 @@ $('#btnSavePlan').addEventListener('click', async () => {
     const meta = { sheet: P.sheet, title: P.info.title, revision: P.info.revision, docNo: P.info.docNo, issued: P.info.issued, fileName: planFileName };
     const res = await Store().savePlan(P.month, meta, P.entries.filter(e => e.date.startsWith(P.month)));
     toast(`Saved ${res.saved} plan entries for ${monthLabel(P.month)}`);
-    applyRange('m:' + P.month);
-    await refresh(); renderPresets(); renderPlanMeta();
+    S.metas = await Store().listPlanMeta(); setMonth(P.month);
+    await refresh(); renderPlanMeta();
   } catch (e) { toast('Save failed: ' + e.message); }
   finally { btn.disabled = false; }
 });
@@ -1043,14 +1065,14 @@ function renderPlanMeta() {
 }
 $('#tblPlanMeta').addEventListener('click', async e => {
   const b = e.target.closest('[data-month]'); if (!b) return;
-  applyRange('m:' + b.dataset.month); await refresh(); showView('dashboard');
+  setMonth(b.dataset.month); await refresh(); showView('dashboard');
 });
 
 /* ---------------- Records ---------------- */
 function renderRecords() {
   const rows = S.records.slice().sort((a, b) => b.date.localeCompare(a.date) || a.machine.localeCompare(b.machine, 'en', { numeric: true }) || a.shift.localeCompare(b.shift));
   const planById = new Map(S.plans.map(p => [p.id, p]));
-  $('#recHint').textContent = `${rows.length} records · ${$('#fFrom').value} to ${$('#fTo').value}`;
+  $('#recHint').textContent = `${rows.length} records · ${monthLabel(curMonth())}`;
   $('#tblRecords').innerHTML = `<thead><tr><th>Date</th><th>Shift</th><th>Machine</th><th>Model</th><th class="r">Plan</th><th class="r">Actual</th><th class="r">Achievement</th><th>Source</th><th></th></tr></thead>
     <tbody>${rows.map(r => { const pl = planById.get(r.id)?.qty ?? r.planQty; return `<tr data-id="${esc(r.id)}"><td>${dowDate(r.date)}</td><td>${shiftTag(r.shift)}</td><td><b>${esc(r.machine)}</b></td><td>${esc(r.model)}</td><td class="r num">${pl ? fmt(pl) : '<span class="muted">Unplanned</span>'}</td><td class="r num">${fmt(r.totalActual)}</td><td class="r">${pl ? statusPill(pct(r.totalActual, pl)) : ''}</td><td>${r.source === 'scan' ? 'Scan' : r.source === 'demo' ? 'Sample' : 'Manual'}</td>
       <td class="r"><button class="btn small ghost" data-act="view">Hours</button><button class="btn small ghost danger" data-act="del">Delete</button></td></tr>`; }).join('') || '<tr><td colspan="9" class="empty">No PCS records in this date range.</td></tr>'}</tbody>`;
@@ -1210,10 +1232,10 @@ $('#btnSave').addEventListener('click', async () => {
     const { record: r, replaced } = await Store().add(rec);
     toast(`${replaced ? 'Updated' : 'Saved'} ${r.machine} · ${r.model} · ${r.shift} · ${fmt(r.totalActual)} pcs`);
     resetScan();
-    if (r.date < $('#fFrom').value || r.date > $('#fTo').value) applyRange('m:' + r.date.slice(0, 7));
+    setMonth(r.date.slice(0, 7), r.date);
     $('#fMachine').value = 'all'; $('#fModel').value = 'all';
     await refresh();
-    $('#fMachine').value = r.machine; fillModelOptions(); $('#fModel').value = r.model; $('#hDate').value = r.date;
+    $('#fMachine').value = r.machine; fillModelOptions(); $('#fModel').value = r.model;
     showView('dashboard');
   } catch (e) { toast('Save failed: ' + e.message); }
   finally { btn.disabled = false; }
@@ -1227,10 +1249,10 @@ $('#btnSaveSettings').addEventListener('click', async () => {
   const hr = v => Math.min(23, Math.max(0, Math.round(Number(v) || 0)));
   Settings.dayStart = hr($('#sDayStart').value); Settings.nightStart = hr($('#sNightStart').value);
   store(SETTINGS_KEY, Settings);
-  await detectMode(); await refresh(); renderPresets();
+  await detectMode(); S.metas = await Store().listPlanMeta().catch(() => []); setMonth(curMonth(), asOf()); await refresh();
   toast(S.live ? 'Connected to Worker' : 'Running in demo mode');
 });
-$('#btnResetDemo').addEventListener('click', async () => { DemoStore.reset(); if (!S.live) { await refresh(); renderPresets(); } toast('Demo data reset'); });
+$('#btnResetDemo').addEventListener('click', async () => { DemoStore.reset(); if (!S.live) await refresh(); toast('Demo data reset'); });
 
 /* ---------------- Navigation & boot ---------------- */
 function showView(v) {
@@ -1242,11 +1264,10 @@ function showView(v) {
   store(SETTINGS_KEY + '.view', v);
 }
 $$('.tabs button').forEach(b => b.addEventListener('click', () => showView(b.dataset.view)));
-$('#presets').addEventListener('click', async e => { const b = e.target.closest('[data-range]'); if (!b) return; applyRange(b.dataset.range); await refresh(); });
-['#fFrom', '#fTo'].forEach(id => $(id).addEventListener('change', async () => { markPreset(null); store(SETTINGS_KEY + '.range', null); await refresh(); }));
+$('#fMonth').addEventListener('change', async () => { setMonth($('#fMonth').value); await refresh(); });
+$('#fDate').addEventListener('change', () => { const d = asOf(); if (!d || !d.startsWith(curMonth())) setMonth(curMonth()); renderDashboard(); });
 $('#fMachine').addEventListener('change', () => { fillModelOptions(); renderDashboard(); });
 ['#fModel', '#fShift'].forEach(id => $(id).addEventListener('change', renderDashboard));
-$('#hDate').addEventListener('change', renderHourly);
 
 async function refresh() {
   await loadData();
@@ -1259,10 +1280,11 @@ let rz; window.addEventListener('resize', () => { clearTimeout(rz); rz = setTime
 (async function boot() {
   await detectMode();
   try { S.metas = await Store().listPlanMeta(); } catch (e) { S.metas = []; }
-  let r = store(SETTINGS_KEY + '.range');
-  if (!r && S.metas.length) r = 'm:' + S.metas.map(m => m.month).sort().pop();
-  applyRange(r);
-  renderPresets();
+  // Current month if it has a plan, else the latest imported plan month.
+  const t = today().slice(0, 7), planMonths = S.metas.map(m => m.month).sort();
+  let ym = store(SETTINGS_KEY + '.month');
+  if (!ym || !/^\d{4}-\d{2}$/.test(ym)) ym = planMonths.includes(t) || !planMonths.length ? t : planMonths.pop();
+  setMonth(ym);
   await loadData();
   const v = store(SETTINGS_KEY + '.view');
   showView(['dashboard', 'plan', 'scan', 'records', 'settings'].includes(v) ? v : 'dashboard');

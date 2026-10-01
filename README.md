@@ -24,12 +24,14 @@ The hourly plan is the OUTPUT / HOURS rate laid out from the shift start (Day 08
 
 Note: the TOTAL column in the Excel uses `=SUM()`, which skips cells written as `D-xxx / N-xxx` (they are text). The app counts them, so its totals are higher than the Excel TOTAL for those rows.
 
-Dashboard views:
-- **Production output**: cumulative plan vs actual over the selected range, plus KPIs (achievement %, variance, days on target, reject rate, downtime)
-- **Daily plan vs actual**: per day, with a table
-- **Hourly plan vs actual**: per hour for any date/line, with cumulative plan, actual and %
-- **By machine and model**: month plan, plan to date, actual, missing PCS forms
-- Filters: date range, machine, model, shift (D / N)
+Dashboard (pick a **month** and a **date**):
+- **Daily output**: plan vs actual for the chosen date, and how many planned runs have a PCS scanned
+- **Month to date**: everything accumulates from the 1st of the month up to the chosen date — plan to date, actual to date, achievement, balance to the month plan (with pcs/day needed over the remaining planned days), days on target, missing PCS, reject rate
+- **Monthly output chart**: accumulated plan vs actual from the 1st
+- **Daily plan vs actual**: per day, with accumulated plan / actual / % columns; click a day to select it
+- **Hourly plan vs actual** for the chosen date
+- **By machine and model**: month plan, plan to date, actual to date, balance, missing PCS
+- Filters: machine, model, shift (D / N)
 
 Stack: HTML + vanilla JS (`public/index.html`), Cloudflare Worker (`worker/index.js`), Firebase Firestore, Gemini API.
 
