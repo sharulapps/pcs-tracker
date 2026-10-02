@@ -392,6 +392,107 @@ code { font-family: var(--font-data); font-size: 12px; background: var(--surface
 .file-row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
 .file-name { font-family: var(--font-data); font-size: 12px; color: var(--ink-2); overflow-wrap: anywhere; }
 
+/* ---------- Premium cards: porcelain white on navy, brass detailing ---------- */
+.panel, .kpi {
+  background: linear-gradient(180deg, #ffffff 0%, #f7f9fc 100%);
+  border: 1px solid rgba(11, 26, 55, 0.07);
+  border-radius: 20px;
+  box-shadow: 0 1px 0 #ffffff inset, 0 0 0 1px rgba(255, 255, 255, 0.04), 0 2px 6px rgba(1, 6, 20, 0.22), 0 28px 56px -28px rgba(0, 3, 14, 0.9);
+}
+/* Filter bar */
+.filterbar { padding: 16px 20px; position: relative; }
+.filterbar .field label { display: flex; align-items: center; gap: 6px; }
+.filterbar .field label::before { content: ""; width: 5px; height: 5px; border-radius: 50%; background: var(--accent); opacity: .7; }
+.filterbar select, .filterbar input[type="date"] {
+  background: #ffffff; border-color: #d9e1ec; border-radius: 12px; min-height: 42px; font-weight: 500;
+  box-shadow: 0 1px 2px rgba(11, 26, 55, 0.06), 0 1px 0 #fff inset;
+}
+.filterbar select.set { border-color: var(--accent); background: linear-gradient(180deg, #fffdf8, #fbf4e6); color: #5b4216; font-weight: 600; box-shadow: 0 0 0 3px var(--accent-wash); }
+.day-parts { margin-top: 14px; padding-top: 12px; border-top: 1px dashed #dfe5ee; }
+.part-chip { padding: 5px 13px; background: #fff; box-shadow: 0 1px 2px rgba(11, 26, 55, 0.06); }
+.part-chip.on { background: linear-gradient(180deg, #fffaf0, #f8ecd3); color: #7a5617; border-color: var(--accent); box-shadow: 0 6px 14px -8px var(--accent); }
+
+/* Hero cards: brass hairline on top */
+.hero-card { padding: 24px; }
+.hero-card::before { content: ""; position: absolute; inset: 0 0 auto 0; height: 3px; background: linear-gradient(90deg, transparent 0%, var(--accent-2) 25%, var(--accent) 60%, transparent 100%); opacity: .9; }
+.hero-card.gauge-card::after { inset: auto -10% -55% auto; width: 420px; height: 420px; background: radial-gradient(closest-side, rgba(214, 178, 115, 0.16), transparent); }
+/* Gauge sits on a recessed watch-face dial */
+.gauge { width: 228px; }
+.gauge::before { content: ""; position: absolute; inset: 9%; border-radius: 50%; background: radial-gradient(circle at 50% 35%, #ffffff 0%, #f3f6fb 62%, #e9eef6 100%); box-shadow: inset 0 2px 8px rgba(11, 26, 55, 0.10), inset 0 -2px 0 rgba(255, 255, 255, 0.9), 0 10px 26px -14px rgba(11, 26, 55, 0.45); }
+.gauge svg { position: relative; }
+.gauge .track { stroke: #e7ecf4; stroke-width: 15; }
+.gauge .val { stroke-width: 15; filter: drop-shadow(0 4px 10px rgba(179, 132, 51, 0.45)); }
+.gauge.dial-good .stop-a { stop-color: #7fe0ae; } .gauge.dial-good .stop-b { stop-color: #17a05f; }
+.gauge.dial-good .val { filter: drop-shadow(0 4px 10px rgba(23, 160, 95, 0.4)); }
+.gauge.dial-crit .stop-a { stop-color: #ffb3b3; } .gauge.dial-crit .stop-b { stop-color: #d94848; }
+.gauge.dial-crit .val { filter: drop-shadow(0 4px 10px rgba(217, 72, 72, 0.35)); }
+.gauge-center .pctv { font-size: 44px; background: linear-gradient(180deg, #13284f, #0b1a37); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.gauge-center .pctv small { -webkit-text-fill-color: var(--muted); }
+.gauge-center .cap { color: var(--accent); letter-spacing: 0.2em; }
+.hero-figs h2 { font-size: 26px; letter-spacing: -0.005em; }
+.hero-figs h2 span { background: linear-gradient(180deg, #d9b56f, #a8792b); -webkit-background-clip: text; background-clip: text; color: transparent; }
+
+/* Figures as soft stat tiles */
+.hero-card .fig-row { gap: 10px; }
+.hero-card .fig { background: linear-gradient(180deg, #f8fafd, #f1f4f9); border: 1px solid #e4e9f1; border-radius: 14px; padding: 10px 14px 11px; box-shadow: 0 1px 0 #fff inset; min-width: 0; }
+.hero-card .fig .v { font-size: 25px; }
+.hero-card .fig.tone-good { background: linear-gradient(180deg, #f3fcf7, #e8f8ef); border-color: #cdeedb; }
+.hero-card .fig.tone-crit { background: linear-gradient(180deg, #fff7f7, #fdeeee); border-color: #f5d4d4; }
+.hero-card .fig.tone-warn { background: linear-gradient(180deg, #fffbf2, #fdf3df); border-color: #f2e0b8; }
+.fig .s { margin-top: 2px; }
+
+/* Day card: calendar badge + thicker meter with a value bubble */
+.day-card { gap: 16px; }
+.day-card .head { align-items: center; flex-wrap: nowrap; }
+.day-card .head-t { flex: 1; min-width: 0; }
+.cal { flex: none; width: 52px; height: 56px; border-radius: 14px; overflow: hidden; display: flex; flex-direction: column; align-items: center; justify-content: center; background: linear-gradient(180deg, #12285a, #061127); color: #fff; box-shadow: 0 10px 20px -10px rgba(6, 17, 39, 0.8), 0 0 0 1px rgba(214, 178, 115, 0.35) inset; position: relative; }
+.cal::before { content: ""; position: absolute; inset: 0 0 auto 0; height: 4px; background: linear-gradient(90deg, var(--accent-2), var(--accent)); }
+.cal b { font-family: var(--font-display); font-size: 22px; font-weight: 750; line-height: 1; margin-top: 3px; }
+.cal span { font-size: 9.5px; letter-spacing: 0.16em; text-transform: uppercase; color: #e8c98c; font-weight: 600; margin-top: 3px; }
+.day-card .date { font-size: 20px; }
+.meter { height: 14px; background: #e9eef5; box-shadow: inset 0 1px 3px rgba(11, 26, 55, 0.12); margin-top: 22px; }
+.meter > i { background: linear-gradient(90deg, #8fbaff, #1f6fe0); box-shadow: 0 4px 12px -2px rgba(31, 111, 224, 0.45); }
+.meter > b { top: -6px; bottom: -6px; width: 2px; background: #0b1a37; }
+.meter > em { position: absolute; bottom: calc(100% + 6px); transform: translateX(-50%); font: 600 10.5px var(--font-data); font-style: normal; color: #fff; background: #0b1a37; padding: 2px 7px; border-radius: 6px; white-space: nowrap; }
+.meter > em::after { content: ""; position: absolute; left: 50%; top: 100%; transform: translateX(-50%); border: 4px solid transparent; border-top-color: #0b1a37; }
+.meter-legend { margin-top: 6px; }
+
+/* KPI rail: icon badge, tone accent, progress line */
+.kpi-group > .eyebrow { display: flex; align-items: center; gap: 10px; color: #c9d4e8; margin-bottom: 10px; }
+.kpi-group > .eyebrow::before { content: ""; width: 18px; height: 2px; border-radius: 2px; background: var(--accent); }
+.kpi-group > .eyebrow::after { content: ""; flex: 1; height: 1px; background: linear-gradient(90deg, rgba(214, 178, 115, 0.45), transparent); }
+.kpi { --tone: var(--accent); padding: 18px 20px 16px; gap: 8px; overflow: hidden; transition: transform .2s ease, box-shadow .2s ease; }
+.kpi::before { content: ""; position: absolute; inset: 0 auto 0 0; width: 4px; background: linear-gradient(180deg, var(--tone), color-mix(in srgb, var(--tone) 30%, transparent)); }
+.kpi::after { content: ""; position: absolute; right: -40px; top: -40px; width: 130px; height: 130px; border-radius: 50%; background: radial-gradient(closest-side, color-mix(in srgb, var(--tone) 14%, transparent), transparent); pointer-events: none; }
+@media (hover: hover) { .kpi:hover { transform: translateY(-2px); box-shadow: 0 1px 0 #fff inset, 0 4px 10px rgba(1, 6, 20, 0.25), 0 34px 60px -26px rgba(0, 3, 14, 0.95); } }
+.kpi.tone-good { --tone: var(--good); } .kpi.tone-warn { --tone: var(--warn); } .kpi.tone-crit { --tone: var(--crit); } .kpi.tone-info { --tone: #8a97b0; } .kpi.tone-gold { --tone: var(--accent); }
+.kpi-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; position: relative; z-index: 1; }
+.kpi-ico { flex: none; width: 34px; height: 34px; border-radius: 11px; display: grid; place-items: center; color: color-mix(in srgb, var(--tone) 85%, #0b1a37); background: color-mix(in srgb, var(--tone) 13%, #fff); border: 1px solid color-mix(in srgb, var(--tone) 25%, transparent); }
+.kpi-ico svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.kpi .v { font-size: 30px; position: relative; z-index: 1; }
+.kbar { display: block; height: 6px; border-radius: 999px; background: #e9eef5; overflow: hidden; }
+.kbar > i { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, color-mix(in srgb, var(--tone) 45%, #fff), var(--tone)); }
+.kpi .s b { color: var(--ink); font-family: var(--font-data); }
+@media (max-width: 560px) {
+  .hero-card { padding: 20px 16px; }
+  .hero-card.gauge-card .fig-row { width: 100%; text-align: left; }
+  .hero-card .fig { padding: 9px 12px 10px; }
+  .hero-card .fig .k { letter-spacing: 0.08em; white-space: nowrap; }
+  .hero-card .fig .v { font-size: 22px; }
+  .hero-figs h2 { font-size: 23px; }
+  .cal { width: 46px; height: 50px; }
+  .cal b { font-size: 19px; }
+  .day-card .date { font-size: 17px; }
+  .kpis { grid-template-columns: 1fr 1fr; gap: 10px; }
+  .kpi { padding: 14px 14px 13px; gap: 6px; border-radius: 16px; }
+  .kpi .eyebrow { font-size: 9.5px; letter-spacing: 0.1em; }
+  .kpi-ico { width: 28px; height: 28px; border-radius: 9px; }
+  .kpi-ico svg { width: 15px; height: 15px; }
+  .kpi .v { font-size: 24px; }
+  .kpi .s { font-size: 11.5px; }
+  .kpi .status { white-space: normal; border-radius: 10px; font-size: 11px; padding: 2px 8px; }
+}
+
 /* Phone: compact header, app-style bottom navigation, thumb-sized controls. */
 @media (max-width: 720px) {
   .brand .sub { display: none; }
@@ -1460,7 +1561,11 @@ function gaugeSVG(p) {
 }
 
 /* ---------------- Dashboard ---------------- */
+function markFilters() {
+  [['#fMachine', 'all'], ['#fModel', 'all'], ['#fShift', 'all']].forEach(([id, def]) => { const el = $(id); if (el) el.classList.toggle('set', !!el.value && el.value !== def && el.value !== ''); });
+}
 function renderDashboard() {
+  markFilters();
   if (!S.ready || !/^\d{4}-\d{2}$/.test(curMonth()) || !asOf()) return;
   renderDayParts();
   const ym = curMonth(), from = monthStart(), to = monthEnd(ym), t = asOf();
@@ -1483,9 +1588,10 @@ function renderDashboard() {
   const daysLeft = days.filter(d => d.date > t && d.plan > 0).length;
 
   const dp = pct(day.actual, day.plan), dst = statusOf(dp);
-  const fig = (k, v, sub = '', sw = '') => `<div class="fig"><div class="k">${sw ? `<i class="sw ${sw}"></i>` : ''}${k}</div><div class="v">${v}</div>${sub ? `<div class="s">${sub}</div>` : ''}</div>`;
+  const fig = (k, v, sub = '', sw = '', tone = '') => `<div class="fig${tone ? ' ' + tone : ''}"><div class="k">${sw ? `<i class="sw ${sw}"></i>` : ''}${k}</div><div class="v">${v}</div>${sub ? `<div class="s">${sub}</div>` : ''}</div>`;
+  const varTone = v => (v > 0 ? 'tone-good' : v < 0 ? 'tone-crit' : '');
   $('#heroGauge').innerHTML = `
-    <div class="gauge">${gaugeSVG(planMtd ? p : 0)}<div class="gauge-center"><div class="pctv${planMtd && p >= 99.95 ? ' long' : ''}">${planMtd ? p.toFixed(1) : '–'}<small>%</small></div><div class="cap">Achievement</div></div></div>
+    <div class="gauge dial-${planMtd ? st.cls : 'none'}">${gaugeSVG(planMtd ? p : 0)}<div class="gauge-center"><div class="pctv${planMtd && p >= 99.95 ? ' long' : ''}">${planMtd ? p.toFixed(1) : '–'}<small>%</small></div><div class="cap">Achievement</div></div></div>
     <div class="hero-figs">
       <div class="eyebrow">Month to date · accumulated ${shortDate(from)} – ${shortDate(t)}</div>
       <h2>${monthLabel(ym)} <span>output</span></h2>
@@ -1493,18 +1599,18 @@ function renderDashboard() {
       <div class="fig-row">
         ${fig('Plan to date', `${fmt(planMtd)}<small>pcs</small>`, '', 'plan')}
         ${fig('Actual to date', `${fmt(actualMtd)}<small>pcs</small>`, '', 'actual')}
-        ${fig('Variance', `${deltaSpan(actualMtd - planMtd)}<small>pcs</small>`)}
-        ${fig('Month plan', `${fmt(monthPlan)}<small>pcs</small>`)}
+        ${fig('Variance', `${deltaSpan(actualMtd - planMtd)}<small>pcs</small>`, '', '', varTone(actualMtd - planMtd))}
+        ${fig('Month plan', `${fmt(monthPlan)}<small>pcs</small>`, monthPlan ? `${pct(actualMtd, monthPlan).toFixed(1)}% done` : '')}
       </div>
     </div>`;
   const fill = day.plan ? Math.min(day.actual / day.plan, 1.2) / 1.2 * 100 : 0;
   $('#heroDay').innerHTML = `
-    <div class="head"><div><div class="eyebrow">Daily output · PCS</div><div class="date">${dowDate(t)}</div></div>${day.plan ? `<span class="status ${dst.cls}"><i>${dst.icon}</i>${dp.toFixed(1)}%</span>` : '<span class="muted">No plan this day</span>'}</div>
+    <div class="head"><div class="cal" aria-hidden="true"><b>${Number(t.slice(8, 10))}</b><span>${new Date(t + 'T00:00:00').toLocaleDateString('en-GB', { month: 'short' })}</span></div><div class="head-t"><div class="eyebrow">Daily output · PCS</div><div class="date">${dowDate(t)}</div></div>${day.plan ? `<span class="status ${dst.cls}"><i>${dst.icon}</i>${dp.toFixed(1)}%</span>` : '<span class="muted">No plan this day</span>'}</div>
     <div class="fig-row">
       ${fig('Plan', `${fmt(day.plan)}<small>pcs</small>`, `${plans.filter(x => x.date === t).length} planned runs`, 'plan')}
-      ${fig('Actual', `${fmt(day.actual)}<small>pcs</small>`, `Variance ${deltaSpan(day.actual - day.plan)}`, 'actual')}
+      ${fig('Actual', `${fmt(day.actual)}<small>pcs</small>`, `Variance ${deltaSpan(day.actual - day.plan)}`, 'actual', day.plan ? 'tone-' + dst.cls : '')}
     </div>
-    <div><div class="meter"><i style="width:${fill}%"></i><b style="left:${100 / 1.2}%"></b></div>
+    <div><div class="meter"><i style="width:${fill}%"></i><b style="left:${100 / 1.2}%"></b>${day.plan ? `<em style="left:${Math.max(fill, 6)}%">${dp.toFixed(0)}%</em>` : ''}</div>
       <div class="meter-legend"><span>0</span><span>plan ${fmt(day.plan)}</span><span>120%</span></div></div>
     <div class="fig-row">
       ${fig('PCS scanned', `${day.n}<small>/ ${day.n + dayPend.length}</small>`, dayPend.length ? `<span class="status warn"><i>▲</i>${dayPend.length} not submitted</span>` : (day.n ? '<span class="status good"><i>✓</i>All in</span>' : ''))}
@@ -1512,11 +1618,29 @@ function renderDashboard() {
     </div>`;
 
   $('#kpiMonthLabel').textContent = `Month to date · ${shortDate(from)} – ${shortDate(t)}`;
-  $('#kpis').innerHTML = `
-    <div class="kpi"><span class="eyebrow">Balance to month plan</span><span class="v num">${fmt(Math.max(0, balance))}<small>pcs</small></span><span class="s">${!monthPlan ? 'No plan imported for this month' : balance <= 0 ? '<span class="status good"><i>✓</i>Month plan reached</span>' : daysLeft ? `${daysLeft} planned days left · ${fmt(balance / daysLeft)} pcs/day` : 'No planned days left'}</span></div>
-    <div class="kpi"><span class="eyebrow">Days on target</span><span class="v num">${daysMet}<small>/ ${planned.length}</small></span><span class="s">Days where actual ≥ plan</span></div>
-    <div class="kpi"><span class="eyebrow">PCS not submitted</span><span class="v num">${pend.length}</span><span class="s">${pend.length ? `<span class="status warn"><i>▲</i>${fmt(pend.reduce((s, x) => s + x.qty, 0))} pcs planned</span>` : '<span class="status good"><i>✓</i>All planned shifts in</span>'}</span></div>
-    <div class="kpi"><span class="eyebrow">Reject rate</span><span class="v num">${actualMtd ? ((reject / actualMtd) * 100).toFixed(2) : '0.00'}<small>%</small></span><span class="s">${fmt(reject)} pcs · downtime ${fmt(downtime)} min</span></div>`;
+  const KI = {
+    balance: '<path d="M12 3v18M5 7h14M7 7l-3 7a3 3 0 0 0 6 0zM17 7l-3 7a3 3 0 0 0 6 0z"/>',
+    target: '<circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="4"/><circle cx="12" cy="12" r="0.8"/>',
+    pcs: '<rect x="5" y="3" width="14" height="18" rx="2"/><path d="M9 8h6M9 12h6M9 16h3"/>',
+    reject: '<path d="M12 3l9 16H3z"/><path d="M12 10v4M12 17v.5"/>',
+  };
+  const kpi = (tone, ico, label, value, sub, bar) => `<div class="kpi tone-${tone}">
+      <div class="kpi-top"><span class="eyebrow">${label}</span><span class="kpi-ico"><svg viewBox="0 0 24 24" aria-hidden="true">${KI[ico]}</svg></span></div>
+      <span class="v num">${value}</span>
+      ${bar === undefined ? '' : `<span class="kbar"><i style="width:${Math.min(Math.max(bar, 0), 100).toFixed(1)}%"></i></span>`}
+      <span class="s">${sub}</span></div>`;
+  const submitted = recsMtd.length, rejRate = actualMtd ? (reject / actualMtd) * 100 : 0;
+  $('#kpis').innerHTML =
+    kpi(!monthPlan ? 'info' : balance <= 0 ? 'good' : 'gold', 'balance', 'Balance to month plan', `${fmt(Math.max(0, balance))}<small>pcs</small>`,
+      !monthPlan ? 'No plan imported for this month' : balance <= 0 ? '<span class="status good"><i>✓</i>Month plan reached</span>' : daysLeft ? `${daysLeft} planned days left · <b>${fmt(balance / daysLeft)}</b> pcs/day` : 'No planned days left',
+      monthPlan ? pct(actualMtd, monthPlan) : undefined) +
+    kpi(!planned.length ? 'info' : daysMet / planned.length >= 0.9 ? 'good' : daysMet / planned.length >= 0.6 ? 'warn' : 'crit', 'target', 'Days on target', `${daysMet}<small>/ ${planned.length}</small>`,
+      'Days where actual ≥ plan', planned.length ? (daysMet / planned.length) * 100 : 0) +
+    kpi(pend.length ? 'warn' : 'good', 'pcs', 'PCS not submitted', `${pend.length}`,
+      pend.length ? `<span class="status warn"><i>▲</i>${fmt(pend.reduce((s, x) => s + x.qty, 0))} pcs planned</span>` : '<span class="status good"><i>✓</i>All planned shifts in</span>',
+      submitted + pend.length ? (submitted / (submitted + pend.length)) * 100 : 100) +
+    kpi(rejRate > 2 ? 'crit' : rejRate > 1 ? 'warn' : 'good', 'reject', 'Reject rate', `${rejRate.toFixed(2)}<small>%</small>`,
+      `${fmt(reject)} pcs · downtime ${fmt(downtime)} min`);
 
   $('#cumTitle').textContent = `Monthly output · ${monthLabel(ym)} · accumulated from the 1st`;
   cumulativeLines($('#chartCum'), days, t);
