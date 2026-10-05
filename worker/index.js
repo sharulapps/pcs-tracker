@@ -384,6 +384,7 @@ export function sanitizeRecord(r) {
     actual: num(h.actual),
     reject: num(h.reject),
     remark: str(h.remark, 200),
+    ...(h.stop === true ? { stop: true } : {}),
   }));
   if (!hourly.length) throw httpError('At least one hourly row is required', 400);
   const machine = str(r.machine, 60);
@@ -455,6 +456,7 @@ const PCS_SCHEMA = {
           actualCum: { type: 'INTEGER', description: 'Actual column, lower handwritten number (cumulative). 0 if empty' },
           downtimeType: { type: 'STRING', description: 'Ticked or circled downtime box: MORNING, SS, MATERIAL, MACHINE, MAN or METHOD. Empty if none' },
           downtimeNote: { type: 'STRING', description: 'Text written after TIME: for this row, e.g. "START-8:30". Empty if none' },
+          stopped: { type: 'BOOLEAN', description: 'true when the operator marked this hour as stopped: "STOP", "M/C STOP", "STOP PRODUCTION", "STOP RUN" written in the row, or a line / arrow drawn down through this and the following rows after a STOP note. false otherwise' },
         },
         required: ['from', 'to', 'plan', 'planCum', 'actual', 'actualCum'],
       },
@@ -484,6 +486,8 @@ Table, one row per hour:
   The lower number of a row is always the lower number of the row above plus this row's upper number.
 - Ignore the Diff column.
 - Downtime details on the right: which box is ticked/circled and any text after "TIME:".
+- STOP: when the operator wrote STOP (or M/C STOP, STOP PRODUCTION, a long line or arrow down the rows after a STOP note), set stopped = true on every hour it covers.
+  "START-8:30" or "SS" alone is a start note, not a stop.
 Only return rows that have a number in Plan or Actual. Use 0 for an empty number.
 Bottom right: OK, NG, REWORK quantities. Bottom left: PREPARE BY / CHECK BY / VERIFY BY names if readable.
 If a number is overwritten or unclear, give your best reading and add a warning naming the row (e.g. "Row 2.3-3: actual could be 30 or 80").`;
@@ -542,7 +546,7 @@ export function normalizePcsForm(raw, { dayStart = 8, nightStart = 20 } = {}) {
   const rows = (Array.isArray(raw?.rows) ? raw.rows : [])
     .filter(r => n(r.plan) || n(r.planCum) || n(r.actual) || n(r.actualCum));
   const hourly = [];
-  let prevOff = 0, prevPlanCum = 0, prevActCum = 0, cumOk = true;
+  let prevOff = 0, prevPlanCum = 0, prevActCum = 0, cumOk = true, stopRun = false;
   rows.forEach(r => {
     const a = to24h(r.from, start, prevOff);
     const b = a ? to24h(r.to, start, a.off) : null;
@@ -570,8 +574,17 @@ export function normalizePcsForm(raw, { dayStart = 8, nightStart = 20 } = {}) {
     } else prevActCum += actual;
 
     const remark = [str(r.downtimeType, 40), str(r.downtimeNote, 160)].filter(Boolean).join(': ');
-    hourly.push({ slot, plan, actual, reject: 0, remark });
+    // STOP marked on the form: that hour's plan is not counted. Once stopped, later hours with no output stay stopped.
+    const marked = r.stopped === true || /\bSTOP(?!\s*[-:]?\s*START)\b/i.test(remark);
+    const stop = marked || (stopRun && actual === 0);
+    stopRun = stop;
+    hourly.push(stop ? { slot, plan, actual, reject: 0, remark, stop: true } : { slot, plan, actual, reject: 0, remark });
   });
+  const stopped = hourly.filter(h => h.stop);
+  if (stopped.length) {
+    const lost = stopped.reduce((s, h) => s + Math.max(0, h.plan - h.actual), 0);
+    warnings.push(`STOP marked on ${stopped.length} hour${stopped.length === 1 ? '' : 's'} (${stopped.map(h => h.slot).join(', ')}): ${lost} pcs of plan will not count against achievement. Untick STOP on any hour where the machine was running.`);
+  }
   if (!hourly.length) warnings.push('No hourly rows were read. Retake the photo with the whole table in frame.');
 
   const sumActual = hourly.reduce((s, h) => s + h.actual, 0);

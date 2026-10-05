@@ -306,3 +306,25 @@ test('extract passes the plan model names to Gemini', async () => {
   await call('/api/extract', { method: 'POST', body: JSON.stringify({ mimeType: 'image/jpeg', imageBase64: 'AAAA' }) });
   assert.doesNotMatch(lastExtractPrompt, /this plant's production plan/);
 });
+
+test('STOP on the PCS form: marked hours and the empty hours after them', () => {
+  const row = (from, to, plan, actual, extra = {}) => ({ from, to, plan, planCum: 0, actual, actualCum: 0, ...extra });
+  const d = normalizePcsForm({
+    station: 'P12 D88N/D63D', dateText: '5.10.2026', shift: 'DAY', confidence: 0.9, warnings: [],
+    rows: [
+      row('8', '9', 12, 12), row('9', '10', 12, 12),
+      row('10', '11', 12, 5, { downtimeType: 'MACHINE', downtimeNote: 'STOP 10:20' }),
+      row('11', '12', 12, 0), row('12', '1', 40, 0),
+      row('1', '2', 12, 0, { stopped: true }),
+      row('2', '3', 12, 9), row('3', '4', 12, 0),
+    ],
+  });
+  assert.deepEqual(d.hourly.map(h => !!h.stop), [false, false, true, true, true, true, false, false]);
+  assert.match(d.warnings.join(' '), /STOP marked on 4 hours .*: 71 pcs of plan/);
+  // "START-8:30" is a start note, not a stop
+  const s = normalizePcsForm({ station: 'P9 X', dateText: '5.10.2026', shift: 'DAY', confidence: 1, warnings: [], rows: [row('8', '9', 10, 4, { downtimeType: 'SS', downtimeNote: 'START-8:30' }), row('9', '10', 10, 0)] });
+  assert.ok(s.hourly.every(h => !h.stop));
+  // the flag survives saving; anything other than true is dropped
+  const r = sanitizeRecord({ date: '2026-10-05', machine: 'P12', model: 'X', hourly: [{ slot: '8-9', plan: 12, actual: 0, stop: true }, { slot: '9-10', plan: 12, actual: 12, stop: 'yes' }] });
+  assert.deepEqual(r.hourly.map(h => h.stop), [true, undefined]);
+});
