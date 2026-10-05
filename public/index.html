@@ -895,23 +895,6 @@ function hourlyPlan(e) {
 }
 
 /* ---------------- Record helpers ---------------- */
-/** Plan that a STOP hour takes off: whatever was planned beyond what was actually made in that hour. */
-const stopLoss = h => Math.max(0, (Number(h.plan) || 0) - (Number(h.actual) || 0));
-/**
- * Hours the operator marked STOP on the PCS form do not count: their plan comes off that run's plan,
- * so a stopped machine is not shown as behind. Uses the form's hourly plan, or the monthly plan's
- * output/hour when the form left the plan of a stopped hour blank.
- */
-function applyStops(plans, recs) {
-  const byId = new Map(recs.filter(r => r.hourly.some(h => h.stop)).map(r => [r.id, r]));
-  if (!byId.size) return plans;
-  return plans.map(p => {
-    const r = byId.get(p.id); if (!r) return p;
-    const laid = new Map(hourlyPlan(p).map(h => [h.hour, h.plan]));
-    const off = Math.min(p.qty, r.hourly.reduce((s, h) => s + (!h.stop ? 0 : h.plan ? stopLoss(h) : Math.max(0, (laid.get(slotHour(h.slot)) || 0) - h.actual)), 0));
-    return off ? { ...p, fullQty: p.qty, stopQty: off, qty: p.qty - off } : p;
-  });
-}
 function normalizeRecord(r) {
   const hourly = (Array.isArray(r.hourly) ? r.hourly : []).map(h => ({
     slot: String(h.slot ?? '').trim(),
@@ -940,7 +923,6 @@ function normalizeRecord(r) {
   out.id = r.id || recId(out);
   out.totalActual = hourly.reduce((s, h) => s + h.actual, 0);
   out.totalReject = hourly.reduce((s, h) => s + h.reject, 0) || out.ngQty;
-  out.stopPlan = hourly.reduce((s, h) => s + (h.stop ? stopLoss(h) : 0), 0);
   return out;
 }
 function normalizePlan(e) {
@@ -1375,7 +1357,6 @@ async function loadData() {
   try {
     [S.records, S.plans, S.metas] = await Promise.all([Store().list(from, to), Store().listPlans(from, to), Store().listPlanMeta()]);
     reconcile(S.plans, S.records);
-    S.plans = applyStops(S.plans, S.records);
     if (S.live) $('#setupBanner').hidden = true;
   } catch (e) {
     toast('Could not load data: ' + e.message); S.records = []; S.plans = [];
@@ -1618,8 +1599,6 @@ function renderDashboard() {
   const daysLeft = days.filter(d => d.date > t && d.plan > 0).length;
 
   const dp = pct(day.actual, day.plan), dst = statusOf(dp);
-  const stopMtd = plans.filter(x => x.date <= t).reduce((s, x) => s + (x.stopQty || 0), 0);
-  const stopDay = plans.filter(x => x.date === t).reduce((s, x) => s + (x.stopQty || 0), 0);
   const fig = (k, v, sub = '', sw = '', tone = '') => `<div class="fig${tone ? ' ' + tone : ''}"><div class="k">${sw ? `<i class="sw ${sw}"></i>` : ''}${k}</div><div class="v">${v}</div>${sub ? `<div class="s">${sub}</div>` : ''}</div>`;
   const varTone = v => (v > 0 ? 'tone-good' : v < 0 ? 'tone-crit' : '');
   $('#heroGauge').innerHTML = `
@@ -1629,7 +1608,7 @@ function renderDashboard() {
       <h2>${monthLabel(ym)} <span>output</span></h2>
       <div>${planMtd ? `<span class="status ${st.cls}"><i>${st.icon}</i>${st.label}</span>` : '<span class="muted">No plan to date</span>'}</div>
       <div class="fig-row">
-        ${fig('Plan to date', `${fmt(planMtd)}<small>pcs</small>`, stopMtd ? `<span class="stop-tag" title="Plan of hours marked STOP on the PCS, not counted">STOP −${fmt(stopMtd)}</span>` : '', 'plan')}
+        ${fig('Plan to date', `${fmt(planMtd)}<small>pcs</small>`, '', 'plan')}
         ${fig('Actual to date', `${fmt(actualMtd)}<small>pcs</small>`, '', 'actual')}
         ${fig('Variance', `${deltaSpan(actualMtd - planMtd)}<small>pcs</small>`, '', '', varTone(actualMtd - planMtd))}
         ${fig('Month plan', `${fmt(monthPlan)}<small>pcs</small>`, monthPlan ? `${pct(actualMtd, monthPlan).toFixed(1)}% done` : '')}
@@ -1639,7 +1618,7 @@ function renderDashboard() {
   $('#heroDay').innerHTML = `
     <div class="head"><div class="cal" aria-hidden="true"><b>${Number(t.slice(8, 10))}</b><span>${new Date(t + 'T00:00:00').toLocaleDateString('en-GB', { month: 'short' })}</span></div><div class="head-t"><div class="eyebrow">Daily output · PCS</div><div class="date">${dowDate(t)}</div></div>${day.plan ? `<span class="status ${dst.cls}"><i>${dst.icon}</i>${dp.toFixed(1)}%</span>` : '<span class="muted">No plan this day</span>'}</div>
     <div class="fig-row">
-      ${fig('Plan', `${fmt(day.plan)}<small>pcs</small>`, `${plans.filter(x => x.date === t).length} planned runs` + (stopDay ? ` · <span class="stop-tag" title="Plan of hours marked STOP on the PCS, not counted">STOP −${fmt(stopDay)}</span>` : ''), 'plan')}
+      ${fig('Plan', `${fmt(day.plan)}<small>pcs</small>`, `${plans.filter(x => x.date === t).length} planned runs`, 'plan')}
       ${fig('Actual', `${fmt(day.actual)}<small>pcs</small>`, `Variance ${deltaSpan(day.actual - day.plan)}`, 'actual', day.plan ? 'tone-' + dst.cls : '')}
     </div>
     <div><div class="meter"><i style="width:${fill}%"></i><b style="left:${100 / 1.2}%"></b>${day.plan ? `<em style="left:${Math.max(fill, 6)}%">${dp.toFixed(0)}%</em>` : ''}</div>
@@ -1863,19 +1842,19 @@ function renderHourly() {
   const recs = S.records.filter(r => r.date === date && match(r));
   const shiftF = $('#fShift').value, shifts = shiftF === 'all' ? ['Day', 'Night'] : [shiftF];
   const slots = new Map(); // key shift|hour
-  const blank = (s, h) => ({ shift: s, hour: h, slot: slotLabel(h), plan: 0, actual: 0, reject: 0, remarks: [], stop: 0, stopPlan: 0 });
+  const blank = (s, h) => ({ shift: s, hour: h, slot: slotLabel(h), plan: 0, actual: 0, reject: 0, remarks: [], stop: 0 });
   shifts.forEach(s => { for (let i = 0; i < 12; i++) { const h = (shiftStart(s) + i) % 24; slots.set(s + '|' + h, blank(s, h)); } });
   const slotFor = (s, h) => { const k = s + '|' + h; if (!slots.has(k)) slots.set(k, blank(s, h)); return slots.get(k); };
   // The PCS form's own hourly plan (breaks, half hours) wins; otherwise lay out the monthly plan by output/hour.
   const formPlanIds = new Set(recs.filter(r => r.hourly.some(h => h.plan > 0)).map(r => r.id));
   const plannedIds = new Set();
-  const stopAt = new Map(recs.map(r => [r.id, new Map(r.hourly.filter(h => h.stop).map(h => [slotHour(h.slot), h.actual]))]));
+  const stopAt = new Map(recs.map(r => [r.id, new Set(r.hourly.filter(h => h.stop).map(h => slotHour(h.slot)))]));
   plans.forEach(p => {
     if (formPlanIds.has(p.id)) return; plannedIds.add(p.id);
     const st = stopAt.get(p.id);
     hourlyPlan(p).forEach(h => {
       const x = slotFor(p.shift, h.hour);
-      if (st && st.has(h.hour)) { const keep = Math.min(h.plan, st.get(h.hour)); x.plan += keep; x.stopPlan += h.plan - keep; x.stop++; }
+      if (st && st.has(h.hour)) x.stop++; // STOP hour: plan 0
       else x.plan += h.plan;
     });
   });
@@ -1883,9 +1862,8 @@ function renderHourly() {
     const hr = slotHour(h.slot); if (hr === null) return;
     const x = slotFor(r.shift, hr);
     x.actual += h.actual; x.reject += h.reject;
-    if (!plannedIds.has(r.id)) { // plan as written on the PCS form; a STOP hour keeps only what was made
-      if (h.stop) { x.plan += Math.min(h.plan, h.actual); x.stopPlan += stopLoss(h); x.stop++; } else x.plan += h.plan;
-    }
+    if (h.stop) x.stop++;
+    else if (!plannedIds.has(r.id)) x.plan += h.plan; // plan as written on the PCS form
     if (h.remark) x.remarks.push((recs.length > 1 ? `${r.machine} ${r.model}: ` : '') + h.remark);
   }));
   const order = s => shifts.indexOf(s.shift) * 100 + ((s.hour - shiftStart(s.shift) + 24) % 24);
@@ -1899,7 +1877,7 @@ function renderHourly() {
     label: h => (shiftF === 'all' ? (h.shift === 'Night' ? 'N' : 'D') : '') + String(h.hour).padStart(2, '0'),
     tipTitle: h => `${h.slot} · ${h.shift} shift`,
     isFuture: () => future,
-    tipExtra: h => (h.stopPlan ? `<div class="row"><span>STOP · not counted</span><span class="num">${fmt(h.stopPlan)}</span></div>` : '') + (h.reject ? `<div class="row"><span>Reject</span><span class="num">${fmt(h.reject)}</span></div>` : '') + (h.remarks.length ? `<div style="margin-top:4px;color:var(--ink-2);white-space:normal;max-width:240px">${h.remarks.map(esc).join('<br>')}</div>` : ''),
+    tipExtra: h => (h.stop ? '<div class="row"><span>STOP</span><span>machine stopped</span></div>' : '') + (h.reject ? `<div class="row"><span>Reject</span><span class="num">${fmt(h.reject)}</span></div>` : '') + (h.remarks.length ? `<div style="margin-top:4px;color:var(--ink-2);white-space:normal;max-width:240px">${h.remarks.map(esc).join('<br>')}</div>` : ''),
   });
   let cp = 0, ca = 0, lastShift = null;
   $('#tblHourly').innerHTML = `<thead><tr><th>Hour</th><th class="r">Plan</th><th class="r">Actual</th><th class="r">Variance</th><th class="r">Cum. plan</th><th class="r">Cum. actual</th><th class="r">Cum. %</th><th>Remarks</th></tr></thead>
@@ -1908,7 +1886,7 @@ function renderHourly() {
       const head = h.shift !== lastShift && shifts.length > 1 ? `<tr class="group"><td colspan="8">${h.shift} shift</td></tr>` : '';
       lastShift = h.shift; cp += h.plan; ca += h.actual;
       const allStop = h.stop && !h.plan && !h.actual;
-      const planCell = allStop ? '<span class="stop-tag">STOP</span>' : fmt(h.plan) + (h.stopPlan ? ` <span class="stop-tag" title="${fmt(h.stopPlan)} pcs of plan not counted">STOP</span>` : '');
+      const planCell = allStop ? '<span class="stop-tag">STOP</span>' : fmt(h.plan) + (h.stop ? ' <span class="stop-tag" title="One of the runs in this hour was stopped">STOP</span>' : '');
       return head + `<tr${allStop ? ' class="stopped"' : ''}><td class="num">${shiftTag(h.shift)} ${esc(h.slot)}</td><td class="r num">${planCell}</td><td class="r num">${fmt(h.actual)}</td><td class="r num">${allStop ? '<span class="muted">–</span>' : deltaSpan(h.actual - h.plan)}</td><td class="r num">${fmt(cp)}</td><td class="r num">${fmt(ca)}</td><td class="r">${cp ? statusPill(pct(ca, cp)) : ''}</td><td style="white-space:normal;min-width:160px">${esc(h.remarks.join('; '))}</td></tr>`;
     }).join('') || `<tr><td colspan="8" class="empty">No plan or PCS for ${date ? dowDate(date) : 'this date'}.</td></tr>`}</tbody>`;
 }
@@ -2050,8 +2028,8 @@ async function linkRecord(rec, planId) {
 /** Save a record again with new STOP marks; replaces the old document if its id changes (record linked to a plan name). */
 async function saveStops(rec, flags) {
   const machine = S.plant === 'all' ? String(rec.machine).replace(/^[^·]+·\s*/, '') : rec.machine;
-  const copy = { ...rec, plant: rec.plant || S.plant, machine, hourly: rec.hourly.map((h, i) => { const { stop, ...rest } = h; return flags[i] ? { ...rest, stop: true } : rest; }) };
-  ['id', '_id', 'formModel', 'totalActual', 'totalReject', 'stopPlan'].forEach(k => delete copy[k]);
+  const copy = { ...rec, plant: rec.plant || S.plant, machine, hourly: rec.hourly.map((h, i) => { const { stop, ...rest } = h; return flags[i] ? { ...rest, plan: 0, actual: 0, stop: true } : rest; }) };
+  ['id', '_id', 'formModel', 'totalActual', 'totalReject'].forEach(k => delete copy[k]);
   const { record } = await Store().add(copy);
   const old = rec._id || rec.id;
   if (old !== record.id) await Store().remove(rec); // _id is the stored document id
@@ -2092,7 +2070,7 @@ $('#tblRecords').addEventListener('click', async ev => {
     const d = document.createElement('tr'); d.className = 'detail';
     const edit = can('scan');
     d.innerHTML = `<td colspan="9"><div class="table-wrap"><table class="stop-edit"><thead><tr><th>Hour</th><th class="r">Plan</th><th class="r">Actual</th><th class="r">Reject</th><th>Stop</th><th>Remarks</th></tr></thead><tbody>${rec.hourly.map(h => `<tr${h.stop ? ' class="is-stop"' : ''}><td class="num">${esc(h.slot)}</td><td class="r num">${fmt(h.plan)}</td><td class="r num">${fmt(h.actual)}</td><td class="r num">${fmt(h.reject)}</td><td>${edit ? stopBtn(h.stop) : h.stop ? '<span class="stop-tag">STOP</span>' : ''}</td><td>${esc(h.remark)}</td></tr>`).join('')}</tbody></table></div>
-      ${edit ? `<div class="stop-save"><span class="hint">Tap <b>STOP</b> on the hours the machine was stopped. Their plan is not counted in achievement.</span><button class="btn small primary" data-act="stops" hidden>Save STOP marks</button></div>` : ''}
+      ${edit ? `<div class="stop-save"><span class="hint">Tap <b>STOP</b> on the hours after the machine stopped: they are saved as plan 0 and actual 0. Daily achievement always uses the monthly plan.</span><button class="btn small primary" data-act="stops" hidden>Save STOP marks</button></div>` : ''}
       ${can('scan') ? linkControl(rec) : ''}
       <div style="margin-top:8px;color:var(--ink-2);font-size:12px">Prepared by: ${esc(rec.operator || '—')} · Supervisor: ${esc(rec.supervisor || '—')} · OK ${fmt(rec.okQty)} · NG ${fmt(rec.ngQty)} · Rework ${fmt(rec.reworkQty)} · Downtime ${fmt(rec.downtimeMin)} min</div></td>`;
     tr.after(d);
@@ -2197,27 +2175,33 @@ function renderHourEdit(rows) {
 }
 function hourRow(h) {
   return `<tr${h.stop ? ' class="is-stop"' : ''}><td><input class="slot num" value="${esc(h.slot)}" aria-label="Hour"></td>
-    <td><input class="plan num" type="number" min="0" inputmode="numeric" value="${h.plan ?? ''}" aria-label="Plan"></td>
-    <td><input class="actual num" type="number" min="0" inputmode="numeric" value="${h.actual ?? ''}" aria-label="Actual"></td>
+    <td><input class="plan num" type="number" min="0" inputmode="numeric" value="${h.plan ?? ''}" aria-label="Plan"${h.stop ? ' readonly' : ''}></td>
+    <td><input class="actual num" type="number" min="0" inputmode="numeric" value="${h.actual ?? ''}" aria-label="Actual"${h.stop ? ' readonly' : ''}></td>
     <td><input class="reject num" type="number" min="0" inputmode="numeric" value="${h.reject ?? ''}" aria-label="Reject"></td>
     <td>${stopBtn(h.stop)}</td>
     <td><input class="remark" value="${esc(h.remark || '')}" aria-label="Remarks"></td>
     <td><button class="btn small ghost danger" data-rm aria-label="Remove hour">✕</button></td></tr>`;
 }
 const stopBtn = on => `<button type="button" class="stop-btn" data-stop aria-pressed="${on ? 'true' : 'false'}" title="Machine stopped this hour: its plan is not counted">STOP</button>`;
+/** STOP hour: plan 0 and actual 0. In the review table the figures read from the form come back when STOP is untapped. */
 function toggleStop(btn) {
-  const on = btn.getAttribute('aria-pressed') !== 'true';
-  btn.setAttribute('aria-pressed', String(on)); btn.closest('tr').classList.toggle('is-stop', on);
+  const on = btn.getAttribute('aria-pressed') !== 'true', tr = btn.closest('tr');
+  btn.setAttribute('aria-pressed', String(on)); tr.classList.toggle('is-stop', on);
+  ['.plan', '.actual'].forEach(c => {
+    const el = $(c, tr); if (!el) return;
+    if (on) { el.dataset.was = el.value; el.value = 0; } else if (el.dataset.was !== undefined) { el.value = el.dataset.was; delete el.dataset.was; }
+    el.readOnly = on;
+  });
 }
 function readHours() {
   return $$('#hourEdit tbody tr').map(tr => ({ slot: $('.slot', tr).value, plan: +$('.plan', tr).value || 0, actual: +$('.actual', tr).value || 0, reject: +$('.reject', tr).value || 0, remark: $('.remark', tr).value, ...(tr.classList.contains('is-stop') ? { stop: true } : {}) }));
 }
 function updateTotals() {
   const h = readHours(); if (!$('#tPlan')) return;
-  const off = h.reduce((s, x) => s + (x.stop ? stopLoss(x) : 0), 0);
-  const p = h.reduce((s, x) => s + x.plan, 0) - off, a = h.reduce((s, x) => s + x.actual, 0);
+  const stops = h.filter(x => x.stop).length;
+  const p = h.reduce((s, x) => s + x.plan, 0), a = h.reduce((s, x) => s + x.actual, 0);
   $('#tPlan').textContent = fmt(p); $('#tAct').textContent = fmt(a); $('#tRej').textContent = fmt(h.reduce((s, x) => s + x.reject, 0));
-  $('#tStop').innerHTML = off ? `<span class="stop-tag" title="Plan of STOP hours, not counted">−${fmt(off)}</span>` : '';
+  $('#tStop').innerHTML = stops ? `<span class="stop-tag" title="Hours marked STOP: plan 0, actual 0">${stops}×</span>` : '';
   $('#tPct').innerHTML = p ? statusPill(pct(a, p)) : '';
 }
 $('#hourEdit').addEventListener('input', updateTotals);

@@ -307,24 +307,26 @@ test('extract passes the plan model names to Gemini', async () => {
   assert.doesNotMatch(lastExtractPrompt, /this plant's production plan/);
 });
 
-test('STOP on the PCS form: marked hours and the empty hours after them', () => {
+test('STOP on the PCS form: every hour after it is plan 0, actual 0', () => {
   const row = (from, to, plan, actual, extra = {}) => ({ from, to, plan, planCum: 0, actual, actualCum: 0, ...extra });
   const d = normalizePcsForm({
-    station: 'P12 D88N/D63D', dateText: '5.10.2026', shift: 'DAY', confidence: 0.9, warnings: [],
+    station: 'WJ1 SAGA MC3 HI', dateText: '4.10.2026', shift: 'DAY', confidence: 0.9, warnings: [],
     rows: [
       row('8', '9', 12, 12), row('9', '10', 12, 12),
-      row('10', '11', 12, 5, { downtimeType: 'MACHINE', downtimeNote: 'STOP 10:20' }),
-      row('11', '12', 12, 0), row('12', '1', 40, 0),
-      row('1', '2', 12, 0, { stopped: true }),
-      row('2', '3', 12, 9), row('3', '4', 12, 0),
+      row('3', '3.3', 6, 6, { downtimeNote: 'stop 4' }), // ran until the stop: still counts
+      row('4', '5', 12, 12), row('5', '6', 40, 40), row('6', '7', 15, 0),
     ],
   });
-  assert.deepEqual(d.hourly.map(h => !!h.stop), [false, false, true, true, true, true, false, false]);
-  assert.match(d.warnings.join(' '), /STOP marked on 4 hours .*: 71 pcs of plan/);
+  assert.deepEqual(d.hourly.map(h => !!h.stop), [false, false, false, true, true, true]);
+  assert.deepEqual(d.hourly.map(h => [h.plan, h.actual]), [[12, 12], [12, 12], [6, 6], [0, 0], [0, 0], [0, 0]]);
+  assert.match(d.warnings.join(' '), /STOP: 3 hours .* plan 0 and actual 0 .*12\/12, .*40\/40, .*15\/0/);
+  // a STOP row with no output is itself a STOP hour; Gemini's flag works without a note
+  const e = normalizePcsForm({ station: 'P9 X', dateText: '4.10.2026', shift: 'DAY', confidence: 1, warnings: [], rows: [row('8', '9', 10, 10), row('9', '10', 10, 0, { stopped: true }), row('10', '11', 10, 0)] });
+  assert.deepEqual(e.hourly.map(h => !!h.stop), [false, true, true]);
   // "START-8:30" is a start note, not a stop
   const s = normalizePcsForm({ station: 'P9 X', dateText: '5.10.2026', shift: 'DAY', confidence: 1, warnings: [], rows: [row('8', '9', 10, 4, { downtimeType: 'SS', downtimeNote: 'START-8:30' }), row('9', '10', 10, 0)] });
   assert.ok(s.hourly.every(h => !h.stop));
   // the flag survives saving; anything other than true is dropped
-  const r = sanitizeRecord({ date: '2026-10-05', machine: 'P12', model: 'X', hourly: [{ slot: '8-9', plan: 12, actual: 0, stop: true }, { slot: '9-10', plan: 12, actual: 12, stop: 'yes' }] });
+  const r = sanitizeRecord({ date: '2026-10-05', machine: 'P12', model: 'X', hourly: [{ slot: '8-9', plan: 0, actual: 0, stop: true }, { slot: '9-10', plan: 12, actual: 12, stop: 'yes' }] });
   assert.deepEqual(r.hourly.map(h => h.stop), [true, undefined]);
 });

@@ -547,6 +547,7 @@ export function normalizePcsForm(raw, { dayStart = 8, nightStart = 20 } = {}) {
     .filter(r => n(r.plan) || n(r.planCum) || n(r.actual) || n(r.actualCum));
   const hourly = [];
   let prevOff = 0, prevPlanCum = 0, prevActCum = 0, cumOk = true, stopRun = false;
+  const ignored = [];
   rows.forEach(r => {
     const a = to24h(r.from, start, prevOff);
     const b = a ? to24h(r.to, start, a.off) : null;
@@ -574,23 +575,25 @@ export function normalizePcsForm(raw, { dayStart = 8, nightStart = 20 } = {}) {
     } else prevActCum += actual;
 
     const remark = [str(r.downtimeType, 40), str(r.downtimeNote, 160)].filter(Boolean).join(': ');
-    // STOP marked on the form: that hour's plan is not counted. Once stopped, later hours with no output stay stopped.
+    // STOP on the form: every hour after it counts as plan 0 and actual 0. The row carrying the STOP note still
+    // counts if it has output (the machine ran until the stop); with no output it is a STOP hour too.
     const marked = r.stopped === true || /\bSTOP(?!\s*[-:]?\s*START)\b/i.test(remark);
-    const stop = marked || (stopRun && actual === 0);
-    stopRun = stop;
-    hourly.push(stop ? { slot, plan, actual, reject: 0, remark, stop: true } : { slot, plan, actual, reject: 0, remark });
+    const stop = stopRun || (marked && actual === 0);
+    stopRun = stopRun || marked;
+    if (stop && (plan || actual)) ignored.push(`${label} ${plan}/${actual}`);
+    hourly.push(stop ? { slot, plan: 0, actual: 0, reject: 0, remark, stop: true } : { slot, plan, actual, reject: 0, remark });
   });
   const stopped = hourly.filter(h => h.stop);
   if (stopped.length) {
-    const lost = stopped.reduce((s, h) => s + Math.max(0, h.plan - h.actual), 0);
-    warnings.push(`STOP marked on ${stopped.length} hour${stopped.length === 1 ? '' : 's'} (${stopped.map(h => h.slot).join(', ')}): ${lost} pcs of plan will not count against achievement. Untick STOP on any hour where the machine was running.`);
+    warnings.push(`STOP: ${stopped.length} hour${stopped.length === 1 ? '' : 's'} (${stopped.map(h => h.slot).join(', ')}) set to plan 0 and actual 0`
+      + (ignored.length ? ` (figures read there, plan/actual: ${ignored.join(', ')})` : '') + '. Untick STOP on any hour where the machine was running.');
   }
   if (!hourly.length) warnings.push('No hourly rows were read. Retake the photo with the whole table in frame.');
 
   const sumActual = hourly.reduce((s, h) => s + h.actual, 0);
   const ok = n(raw?.ok), ng = n(raw?.ng), rework = n(raw?.rework);
   if (ok && ok !== sumActual) warnings.push(`OK total on the form is ${ok}, but the hourly actuals add up to ${sumActual}. Please confirm which is right.`);
-  if (cumOk && prevActCum && prevActCum !== sumActual) warnings.push(`Last cumulative actual is ${prevActCum}, but the hourly actuals add up to ${sumActual}.`);
+  if (cumOk && !ignored.length && prevActCum && prevActCum !== sumActual) warnings.push(`Last cumulative actual is ${prevActCum}, but the hourly actuals add up to ${sumActual}.`);
 
   return {
     docNo: str(raw?.docNo, 40), station, machine, model, date, shift,

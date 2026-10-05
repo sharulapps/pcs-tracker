@@ -38,10 +38,10 @@ Gemini only transcribes the form. The Worker (`normalizePcsForm`) then:
 - warns when OK on the form differs from the hourly actuals,
 - splits Station into machine and model so the record matches the monthly plan.
 
-**STOP hours.** When the operator writes STOP on the form (or draws a line down the rows after a STOP note), Gemini marks those hours,
-and the empty hours that follow a STOP stay stopped until output starts again. A stopped hour's plan (minus anything made in that hour) is taken off that run's plan,
-so a stopped machine is not counted as behind: day, month to date, KPIs, machine tables and the AI summary all use the reduced plan, and the hourly table shows STOP instead of a negative variance.
-The supervisor can tap **STOP** on any hour in the review table before saving, and fix saved records under Records → Hours → *Save STOP marks*.
+**STOP hours.** When the operator writes STOP on the form, every hour after it counts as plan 0 and actual 0 (figures Gemini reads there are listed in a warning and ignored).
+The row carrying the STOP note still counts if it has output, since the machine ran until the stop. The hourly table shows those hours as STOP, with no negative variance.
+Daily and month-to-date achievement always use the **monthly plan** quantity against the PCS actual; STOP never changes the monthly plan.
+The supervisor can tap **STOP** on any hour in the review table before saving (untapping restores the figures read), and fix saved records under Records → Hours → *Save STOP marks*.
 
 The hourly plan written on the form (with breaks and half hours) is used for the hourly chart; the monthly plan's output/hour is the fallback when a run has no PCS yet.
 
